@@ -25,7 +25,18 @@ PKG_ARGS="${PKG_ARGS:---workspace}"
 FEATURE_ARGS="${FEATURE_ARGS:---all-features}"
 MODE="${1:-full}"
 
-cd "$(git rev-parse --show-toplevel)"
+# Gate the crate the caller is standing in. A consumer whose crates are not one
+# workspace passes each by `dir`, which is a `cd` before this script runs -- and
+# an unconditional jump to the git toplevel undoes it on line one, silently.
+# That is not a theoretical failure: in a repo with no root manifest it made
+# lints-check print "no Cargo.toml at the repo root -- skipped" and exit 0, a
+# green light for a check that ran on nothing.
+#
+# Falling back to the toplevel keeps the convenience this always had: run it
+# from anywhere in a single-crate repo and it finds the manifest.
+if [ ! -f Cargo.toml ]; then
+  cd "$(git rev-parse --show-toplevel)"
+fi
 
 have() { command -v "$1" >/dev/null 2>&1 || [ -x "${CARGO_HOME:-$HOME/.cargo}/bin/$1" ]; }
 step() { printf '[%s/%s] %s\n' "$1" "$TOTAL" "$2"; }
