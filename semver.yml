@@ -1,0 +1,16 @@
+name: rust-quality-semver
+description: >-
+  cargo-semver-checks: diff the public API against the published baseline and
+  fail on an undeclared breaking change. Libraries only; needs a prior release
+  on the registry.
+version: 1.0.0
+
+props:
+  pkg_args:
+    type: string
+    default: "--workspace"
+    description: Package selector.
+
+steps:
+  - name: cargo semver-checks
+    shell: cargo semver-checks check-release {{ props.pkg_args }}

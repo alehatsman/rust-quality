@@ -1,0 +1,21 @@
+name: rust-quality-miri
+description: >-
+  Run the test suite under Miri to detect undefined behaviour. Only meaningful
+  for crates that contain unsafe; requires the nightly toolchain.
+version: 1.0.0
+
+props:
+  pkg_args:
+    type: string
+    default: "--workspace"
+    description: Package selector.
+  toolchain:
+    type: string
+    default: "nightly"
+    description: Toolchain to run Miri under. Miri is nightly-only.
+
+steps:
+  - name: cargo miri test
+    shell: >-
+      rustup +{{ props.toolchain }} component add miri &&
+      cargo +{{ props.toolchain }} miri test {{ props.pkg_args }}

@@ -1,0 +1,17 @@
+name: rust-quality-doc
+description: Build rustdoc with warnings denied — catches broken intra-doc links.
+version: 1.0.0
+
+props:
+  pkg_args:
+    type: string
+    default: "--workspace"
+    description: Package selector passed to cargo.
+  feature_args:
+    type: string
+    default: "--all-features"
+    description: Feature selector. Set "" for mutually exclusive features.
+
+steps:
+  - name: rust-quality-doc
+    shell: RUSTDOCFLAGS="-D warnings" cargo doc --locked --no-deps {{ props.pkg_args }} {{ props.feature_args }}

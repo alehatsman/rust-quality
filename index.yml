@@ -1,0 +1,38 @@
+name: rust-quality
+description: >-
+  Shared Rust quality-gate toolchain — one canonical lint block, clippy /
+  rustfmt / cargo-deny config, gate scripts, and the agent-facing Rust guide.
+# Export names map to component (preset) files at the module root. component_dir
+# resolves to filepath.Dir of the component file, so keeping these at the root
+# (alongside scripts/ and the shared configs) lets each component reference
+# `{{ component_dir }}/scripts/...` directly.
+exports:
+  # Aggregate gates
+  default: ci.yml              # full pre-push gate
+  ci: ci.yml
+  ci-fast: fast.yml            # fast pre-commit gate (no full build)
+  tools: tools.yml             # install + verify the gate toolchain
+  sync-config: sync-config.yml # drop clippy/rustfmt/deny config into the consumer
+
+  # Individual stages
+  check: check.yml
+  fmt: fmt.yml
+  lint: lint.yml
+  test: test.yml
+  build: build.yml
+  doc: doc.yml
+  deny: deny.yml               # advisories + licenses + bans + sources
+  machete: machete.yml         # unused dependencies
+  lints-check: lints-check.yml # lint-block drift vs lints.toml
+  ai-lint: ai-lint.yml
+  budget-status: budget-status.yml
+
+  # Out of band — too slow or too project-specific for the push path
+  cov: cov.yml                 # coverage (cargo-llvm-cov)
+  semver: semver.yml           # public API breakage (libraries)
+  features: features.yml       # feature powerset (cargo-hack)
+  miri: miri.yml               # undefined behaviour (crates with unsafe)
+
+  # Agent-facing
+  clippy-findings: clippy-findings.yml
+  findings: findings.yml       # aggregate JSONL -> .gate/findings.jsonl

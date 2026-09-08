@@ -1,0 +1,9 @@
+name: rust-quality-machete
+description: >-
+  cargo-machete: dependencies declared but never used. Deps used only from
+  build.rs or through a macro need an ignore entry in the package manifest.
+version: 1.0.0
+
+steps:
+  - name: cargo machete
+    shell: cargo machete

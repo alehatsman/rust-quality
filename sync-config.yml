@@ -1,0 +1,36 @@
+name: rust-quality-sync-config
+description: >-
+  Drop the shared clippy.toml, rustfmt.toml and deny.toml into the consumer
+  repo root, then print the canonical lint block. src reads from the module
+  (component_dir); dest is relative and resolves against the consumer's
+  invocation dir.
+version: 1.0.0
+
+steps:
+  - name: install shared clippy.toml
+    file.copy:
+      src: "{{ component_dir }}/clippy.toml"
+      dest: "clippy.toml"
+      force: true
+
+  - name: install shared rustfmt.toml
+    file.copy:
+      src: "{{ component_dir }}/rustfmt.toml"
+      dest: "rustfmt.toml"
+      force: true
+
+  - name: install shared deny.toml
+    file.copy:
+      src: "{{ component_dir }}/deny.toml"
+      dest: "deny.toml"
+      force: true
+
+  # The lint block cannot be copied: cargo has no include mechanism for
+  # manifests. Print it so it can be pasted into the workspace Cargo.toml;
+  # rq/lints-check then enforces it.
+  - name: print the canonical lint block
+    shell: |
+      echo "── paste the block below into the WORKSPACE ROOT Cargo.toml,"
+      echo "   then give every member crate:  [lints]  /  workspace = true"
+      echo "   rq/lints-check enforces both from then on ──"
+      cat "{{ component_dir }}/lints.toml"

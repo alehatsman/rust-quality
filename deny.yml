@@ -1,0 +1,14 @@
+name: rust-quality-deny
+description: >-
+  cargo-deny: RustSec advisories, license policy, banned/duplicate crates and
+  registry sources. Requires deny.toml (rq/sync-config installs it).
+version: 1.0.0
+
+steps:
+  - name: cargo deny check
+    shell: |
+      if [ ! -f deny.toml ]; then
+        echo "deny.toml missing — run the rq/sync-config preset" >&2
+        exit 1
+      fi
+      cargo deny --all-features check

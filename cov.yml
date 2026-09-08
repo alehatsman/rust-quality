@@ -1,0 +1,33 @@
+name: rust-quality-cov
+description: >-
+  Coverage via cargo-llvm-cov over the nextest run. Out of band: instrumented
+  builds are a separate compilation, too slow for the push path.
+version: 1.0.0
+
+props:
+  pkg_args:
+    type: string
+    default: "--workspace"
+    description: Package selector passed to cargo.
+  feature_args:
+    type: string
+    default: "--all-features"
+    description: Feature selector. Set "" for mutually exclusive features.
+  min_lines:
+    type: string
+    default: ""
+    description: >-
+      Line-coverage floor as a percentage. Empty = report only, no gate. Set it
+      once a real number is known — a threshold picked before measuring is a
+      number nobody trusts.
+  out:
+    type: string
+    default: "lcov.info"
+    description: lcov output path (gitignore it).
+
+steps:
+  - name: cargo llvm-cov
+    shell: >-
+      cargo llvm-cov nextest --locked {{ props.pkg_args }} {{ props.feature_args }}
+      --lcov --output-path "{{ props.out }}"
+      {% if props.min_lines %}--fail-under-lines {{ props.min_lines }}{% endif %}

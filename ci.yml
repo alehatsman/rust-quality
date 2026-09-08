@@ -1,0 +1,29 @@
+name: rust-quality-ci
+description: >-
+  Full pre-push gate — fmt + build + clippy + test/doctests + rustdoc +
+  cargo-deny + cargo-machete + lints drift + soft caps. Runs
+  scripts/ci/full.sh in the consumer's cwd.
+version: 1.0.0
+
+props:
+  pkg_args:
+    type: string
+    default: "--workspace"
+    description: Package selector passed to every cargo invocation.
+  feature_args:
+    type: string
+    default: "--all-features"
+    description: >-
+      Feature selector. Crates with mutually exclusive features must set this
+      to "" — --all-features cannot compile them.
+  cap_loc:
+    type: string
+    default: "500"
+    description: God-file soft cap in LOC (informational).
+
+steps:
+  - name: rust-quality full gate
+    shell: >-
+      PKG_ARGS="{{ props.pkg_args }}" FEATURE_ARGS="{{ props.feature_args }}"
+      CAP_LOC="{{ props.cap_loc }}"
+      bash "{{ component_dir }}/scripts/ci/full.sh"

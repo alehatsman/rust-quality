@@ -1,0 +1,9 @@
+name: rust-quality-lints-check
+description: >-
+  Assert the consumer's Cargo.toml carries the canonical lint block from
+  rust-quality/lints.toml and that every workspace member inherits it.
+version: 1.0.0
+
+steps:
+  - name: lints-check
+    shell: bash "{{ component_dir }}/scripts/lints-check.sh"

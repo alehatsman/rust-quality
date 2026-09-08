@@ -1,0 +1,68 @@
+name: rust-quality-findings
+description: >-
+  Aggregate every emitter's `--format jsonl` output into one machine-readable
+  stream (.gate/findings.jsonl) — the agent-facing view of the gate. A pure
+  artifact producer: emitters never abort the sweep and this preset does not
+  re-gate. Enforcement stays with rq/ci (the human gate); this makes the same
+  signal legible to tools. Not for the local fast path — clippy-findings busts
+  the clippy cache and recompiles the workspace.
+version: 1.0.0
+
+props:
+  pkg_args:
+    type: string
+    default: "--workspace"
+    description: Package selector for the clippy pass.
+  feature_args:
+    type: string
+    default: "--all-features"
+    description: Feature selector. Set "" for mutually exclusive features.
+  cap_loc:
+    type: string
+    default: "500"
+    description: God-file soft cap in LOC.
+  out:
+    type: string
+    default: ".gate/findings.jsonl"
+    description: Destination JSONL artifact (gitignored).
+
+steps:
+  # Truncate — each run is a fresh snapshot; dedup across runs is the
+  # consumer's job via each finding's `fingerprint`.
+  - name: reset findings artifact
+    shell: 'mkdir -p "$(dirname "{{ props.out }}")" && : > "{{ props.out }}"'
+
+  # The heaviest emitter and the one carrying the most signal: every lint in
+  # lints.toml lands here with file, line, rule and fingerprint.
+  - name: collect clippy findings
+    shell: >-
+      PKG_ARGS="{{ props.pkg_args }}" FEATURE_ARGS="{{ props.feature_args }}"
+      bash "{{ component_dir }}/scripts/clippy-findings.sh" --format jsonl
+      >> "{{ props.out }}"
+
+  # --warn-only: ai-lint must not abort the sweep just because it found smells;
+  # its findings are captured, the exit code is not the gate here.
+  - name: collect ai-lint findings
+    shell: >-
+      bash "{{ component_dir }}/scripts/ai-lint.sh" --all --format jsonl --warn-only
+      >> "{{ props.out }}"
+
+  - name: collect lints-check findings
+    shell: >-
+      bash "{{ component_dir }}/scripts/lints-check.sh" --format jsonl --warn-only
+      >> "{{ props.out }}"
+
+  # Informational emitter (level:warning) — never fails, so no guard needed.
+  - name: collect budget findings
+    shell: >-
+      CAP_LOC="{{ props.cap_loc }}"
+      bash "{{ component_dir }}/scripts/budget-status.sh" --format jsonl
+      >> "{{ props.out }}"
+
+  # `grep -c` prints 0 and exits 1 on no match, so guard with `|| true` (not
+  # `|| echo 0`, which would append a second 0).
+  - name: summarize
+    shell: >-
+      echo "findings: $(grep -c . "{{ props.out }}" 2>/dev/null || true) total,
+      $(grep -c '"level":"error"' "{{ props.out }}" 2>/dev/null || true) error(s)
+      -> {{ props.out }}"

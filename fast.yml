@@ -1,0 +1,26 @@
+name: rust-quality-ci-fast
+description: >-
+  Fast pre-commit gate — Cargo.lock drift + cargo fmt --check + cargo check +
+  ai-lint (staged) + soft caps. No full build. Runs scripts/ci/fast.sh.
+version: 1.0.0
+
+props:
+  pkg_args:
+    type: string
+    default: "--workspace"
+    description: Package selector passed to cargo check.
+  feature_args:
+    type: string
+    default: "--all-features"
+    description: Feature selector. Set "" for mutually exclusive features.
+  cap_loc:
+    type: string
+    default: "500"
+    description: God-file soft cap in LOC (informational).
+
+steps:
+  - name: rust-quality fast gate
+    shell: >-
+      PKG_ARGS="{{ props.pkg_args }}" FEATURE_ARGS="{{ props.feature_args }}"
+      CAP_LOC="{{ props.cap_loc }}"
+      bash "{{ component_dir }}/scripts/ci/fast.sh"
