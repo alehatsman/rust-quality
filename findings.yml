@@ -22,9 +22,12 @@ props:
     description: Destination JSONL artifact (gitignored).
 
 steps:
+  # Same reason as rq/ci: the clippy pass runs `cargo clean -p` first, so this
+  # is always a cold compile of the workspace. A `use` site cannot set it.
   - name: collect findings
     shell: >-
       PKG_ARGS="{{ props.pkg_args }}" FEATURE_ARGS="{{ props.feature_args }}"
       CAP_LOC="{{ props.cap_loc }}"
       bash "{{ component_dir }}/scripts/findings.sh" "{{ props.out }}"
     changed_when: "false"
+    timeout: 30m

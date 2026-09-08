@@ -19,9 +19,15 @@ props:
     description: God-file soft cap in LOC (informational).
 
 steps:
+  # The full gate compiles the workspace twice over -- clippy's pass and the
+  # test profile's -- and runs the whole suite. Ten minutes is the default and
+  # a cold machine will exceed it. It lives here rather than at a call site: a
+  # `use` step propagates tags to its children and nothing else, so a consumer
+  # cannot reach in to set it.
   - name: full gate
     shell: >-
       PKG_ARGS="{{ props.pkg_args }}" FEATURE_ARGS="{{ props.feature_args }}"
       CAP_LOC="{{ props.cap_loc }}"
       bash "{{ component_dir }}/scripts/gate.sh" full
     changed_when: "false"
+    timeout: 30m
