@@ -2,7 +2,16 @@ description: >-
   Assert the consumer's Cargo.toml carries the canonical lint block and that
   every workspace member inherits it. The one thing cargo cannot do for us.
 
+props:
+  dir:
+    type: string
+    default: "."
+    description: >-
+      Directory holding the Cargo.toml to gate, relative to where provision is
+      invoked. A repo whose crates are not one workspace passes each in turn;
+      making them a workspace is that repo's business, not the gate's.
+
 steps:
   - name: lint block drift
-    shell: bash "{{ component_dir }}/scripts/lints-check.sh"
+    shell: cd "{{ props.dir }}" && bash "{{ component_dir }}/scripts/lints-check.sh"
     changed_when: "false"

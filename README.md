@@ -2,8 +2,8 @@
 
 Shared Rust quality gate for the fleet — the canonical lint block, the
 clippy/rustfmt/cargo-deny config, cargo aliases, a two-mode gate, and the
-agent-facing guide. Consumed as a [mooncake](https://github.com/alehatsman/mooncake)
-module or by [provision](https://github.com/alehatsman/provision).
+agent-facing guide. Consumed by
+[provision](https://github.com/alehatsman/provision).
 
 - [docs/RUST.md](docs/RUST.md) — how to write it. Rules, gate markers, the 2026 trap list, a review checklist.
 - [docs/STACK.md](docs/STACK.md) — what to reach for. De-facto crate picks with versions and deviation triggers.
@@ -25,38 +25,65 @@ scripts/
 docs/            the guide
 ```
 
-Six exports: `ci`, `ci-fast`, `tools`, `sync-config`, `lints-check`, `findings`.
+Six presets. Anything that is a single cargo invocation is a cargo alias (see
+`aliases.toml`), not a preset; presets exist only for multi-step gates with
+fail-fast ordering, and for getting config into a consumer repo.
 
-## Two consumers
+| File | What it does |
+|---|---|
+| `ci.yml` | full pre-push gate — fmt, clippy, test + doctests, rustdoc, cargo-deny, cargo-machete, lint drift, soft caps |
+| `fast.yml` | pre-commit gate — lockfile drift, fmt, clippy, ai-lint on staged files, soft caps. No extra tools, no network |
+| `tools.yml` | install + verify cargo-nextest, cargo-deny, cargo-machete and the clippy/rustfmt components |
+| `sync-config.yml` | config into the consumer repo, and print the lint block |
+| `lints-check.yml` | lint-block drift — the one thing cargo cannot do for us |
+| `findings.yml` | every finding as JSONL for agents → `.gate/findings.jsonl` |
 
-**mooncake** reads `index.yml`, whose `exports` table maps a short name to a
-preset file.
+## How a consumer reaches it
 
-**provision** reads no table. A preset is a component and a consumer `use`s it
-by file path, from a checkout the consumer's own plan clones and pins:
+A preset is a provision component, `use`d by file path from a checkout the
+consumer's own plan clones and pins:
 
 ```yaml
-- name: full gate
-  use: ~/.cache/provision/tools/rust-quality/ci.yml
+steps:
+  - name: full gate
+    use: ~/.cache/provision/tools/rust-quality/ci.yml
 ```
 
-Nothing fetches: the checkout is a step in the consumer's plan, `creates`-gated
-like any other, so a bump is a one-line version change and offline works. Inside
-a preset, `{{ component_dir }}` is this checkout's own directory — which is how
-a step reaches `scripts/` and how `rq/sync-config` reads the config it copies.
-A relative `path:` is not resolved against anything and so lands in the
+```
+$ provision list ~/.cache/provision/tools/rust-quality/
+$ provision apply tasks/ci.yml
+```
+
+Nothing fetches at gate time. The checkout is a step in the consumer's plan,
+`creates`-gated like any other, so a bump is a one-line version change and
+offline works.
+
+Inside a preset, `{{ component_dir }}` is this checkout's own directory, which
+is how a step reaches `scripts/` and how `rq/sync-config` reads the config it
+copies. A relative `path:` is not resolved against anything and so lands in the
 directory provision was invoked from, which is the consumer repo. Read from
 here, write over there, with no argument saying where "there" is.
 
-The presets carry no `name:` or `version:` root key. The tag is the version,
-and the consumer pins it.
+**`dir`** names the crate. Every preset that runs cargo takes it, defaulting to
+`"."`, so a single-crate repo passes nothing. A repo whose crates are not one
+workspace passes each in turn:
 
-One preset is now provision-only: `sync-config.yml` copies with provision's
-`file` action, and mooncake's file actions are namespaced (`file.copy`,
-`file.write`), so a bare `file:` is an unknown action to it. The bodies are
-otherwise the same shape — `file.write` takes the same `path`, `state`, `src`
-and `mode` — so if mooncake ever needs this preset back, it is a key rename
-and not a rewrite. The other five presets run `shell` and are unaffected.
+```yaml
+steps:
+  - name: daemon
+    use: ~/.cache/provision/tools/rust-quality/ci.yml
+    props: { dir: daemon }
+  - name: cli
+    use: ~/.cache/provision/tools/rust-quality/ci.yml
+    props: { dir: cli }
+```
+
+Whether those crates should be one workspace instead is that repo's business,
+not the gate's.
+
+The presets carry no `name:` or `version:` root key and there is no exports
+table: the tag is the version, and provision lists a directory by each file's
+`description:`.
 
 ## Design
 
@@ -66,7 +93,7 @@ config, not command wrappers**. Three rules follow.
 
 **One cargo invocation is an alias, not a preset.** `rq/sync-config` installs
 `.cargo/config.toml`, so the everyday commands work in a terminal, in CI and in
-an editor with no mooncake and no YAML:
+an editor with no provision and no YAML:
 
 ```
 cargo lint       # clippy, all targets, all features, -D warnings
@@ -163,30 +190,30 @@ all**, and a check that silently reports nothing is worse than no check.
 | `FEATURE_ARGS` | `--all-features` | Set `""` for mutually exclusive features |
 | `CAP_LOC` | `500` | God-file soft cap, non-test `.rs` |
 
-## Consuming this module
+## Knobs, from a call site
+
+`PKG_ARGS`, `FEATURE_ARGS` and `CAP_LOC` above are what `scripts/` reads. From
+provision they are props, and `dir` names the crate:
 
 ```yaml
-modules:
-  rq:
-    source: "github.com/alehatsman/rust-quality@v0.2.0"
-    props:
-      feature_args: "{{ FEATURE_ARGS }}"
-
-tasks:
-  ci:      rq/ci
-  ci-fast: rq/ci-fast
-  findings: rq/findings
+steps:
+  - name: full gate
+    use: ~/.cache/provision/tools/rust-quality/ci.yml
+    props: { dir: daemon, feature_args: "" }
 ```
 
-First-time setup:
+First-time setup in a consumer repo:
 
 ```
-mooncake task tools          # three tools + clippy/rustfmt components
-mooncake task sync-config    # configs + cargo aliases; prints the lint block
+provision apply tasks/tools.yml         # three tools + clippy/rustfmt components
+provision apply tasks/sync-config.yml   # config + cargo aliases; prints the lint block
 # paste the block into the workspace root Cargo.toml
 # add `[lints]` / `workspace = true` to every member crate
-mooncake task ci
+provision apply tasks/ci.yml
 ```
+
+`tasks/` in the consumer is one file per preset, each a `description:` and one
+`use:` line. provision's own repo is the worked example.
 
 ## Not here, on purpose
 

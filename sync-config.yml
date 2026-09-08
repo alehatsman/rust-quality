@@ -3,6 +3,15 @@ description: >-
   deny.toml and .cargo/config.toml — then print the lint block, which cargo
   gives us no way to copy.
 
+props:
+  dir:
+    type: string
+    default: "."
+    description: >-
+      Directory holding the Cargo.toml to configure, relative to where
+      provision is invoked. A repo whose crates are not one workspace runs
+      this once per crate.
+
 # A `file` step's `src` resolves against the file that names it, so
 # `{{ component_dir }}` is what reaches this checkout's own copies. `path` is
 # not resolved: a relative one is relative to the directory provision was
@@ -15,13 +24,13 @@ description: >-
 # `file.copy`'s idea of the same thing.
 steps:
   - name: clippy.toml
-    file: { path: clippy.toml, state: file, src: "{{ component_dir }}/clippy.toml" }
+    file: { path: "{{ props.dir }}/clippy.toml", state: file, src: "{{ component_dir }}/clippy.toml" }
   - name: rustfmt.toml
-    file: { path: rustfmt.toml, state: file, src: "{{ component_dir }}/rustfmt.toml" }
+    file: { path: "{{ props.dir }}/rustfmt.toml", state: file, src: "{{ component_dir }}/rustfmt.toml" }
   - name: deny.toml
-    file: { path: deny.toml, state: file, src: "{{ component_dir }}/deny.toml" }
+    file: { path: "{{ props.dir }}/deny.toml", state: file, src: "{{ component_dir }}/deny.toml" }
   - name: .cargo/config.toml
-    file: { path: .cargo/config.toml, state: file, src: "{{ component_dir }}/aliases.toml" }
+    file: { path: "{{ props.dir }}/.cargo/config.toml", state: file, src: "{{ component_dir }}/aliases.toml" }
 
   # Cargo has no include mechanism for manifests, so the lint levels are the
   # one thing that cannot be a file copy. Print them; rq/lints-check enforces.

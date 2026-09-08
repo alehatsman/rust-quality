@@ -3,6 +3,13 @@ description: >-
   soft caps. No extra tools, no network.
 
 props:
+  dir:
+    type: string
+    default: "."
+    description: >-
+      Directory holding the Cargo.toml to gate, relative to where provision is
+      invoked. A repo whose crates are not one workspace passes each in turn;
+      making them a workspace is that repo's business, not the gate's.
   pkg_args:
     type: string
     default: "--workspace"
@@ -18,7 +25,10 @@ props:
 
 steps:
   - name: fast gate
+    # `cd` before the assignments -- see rq/ci for why the other order loses
+    # them.
     shell: >-
+      cd "{{ props.dir }}" &&
       PKG_ARGS="{{ props.pkg_args }}" FEATURE_ARGS="{{ props.feature_args }}"
       CAP_LOC="{{ props.cap_loc }}"
       bash "{{ component_dir }}/scripts/gate.sh" fast

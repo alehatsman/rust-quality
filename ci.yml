@@ -3,6 +3,13 @@ description: >-
   cargo-machete, lint-block drift, soft caps. First failure stops the run.
 
 props:
+  dir:
+    type: string
+    default: "."
+    description: >-
+      Directory holding the Cargo.toml to gate, relative to where provision is
+      invoked. A repo whose crates are not one workspace passes each in turn;
+      making them a workspace is that repo's business, not the gate's.
   pkg_args:
     type: string
     default: "--workspace"
@@ -25,7 +32,12 @@ steps:
   # `use` step propagates tags to its children and nothing else, so a consumer
   # cannot reach in to set it.
   - name: full gate
+    # `cd` first, then the assignments. A prefix on `cd` would not reach the
+    # script: `cd` is a regular builtin, so `VAR=x cd d` does not export VAR
+    # past the command, and the gate would silently run with its own defaults
+    # instead of the consumer's.
     shell: >-
+      cd "{{ props.dir }}" &&
       PKG_ARGS="{{ props.pkg_args }}" FEATURE_ARGS="{{ props.feature_args }}"
       CAP_LOC="{{ props.cap_loc }}"
       bash "{{ component_dir }}/scripts/gate.sh" full
