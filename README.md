@@ -3,7 +3,7 @@
 Shared Rust quality gate for the fleet — the canonical lint block, the
 clippy/rustfmt/cargo-deny config, cargo aliases, a two-mode gate, and the
 agent-facing guide. Consumed as a [mooncake](https://github.com/alehatsman/mooncake)
-module.
+module or by [provision](https://github.com/alehatsman/provision).
 
 - [docs/RUST.md](docs/RUST.md) — how to write it. Rules, gate markers, the 2026 trap list, a review checklist.
 - [docs/STACK.md](docs/STACK.md) — what to reach for. De-facto crate picks with versions and deviation triggers.
@@ -26,6 +26,37 @@ docs/            the guide
 ```
 
 Six exports: `ci`, `ci-fast`, `tools`, `sync-config`, `lints-check`, `findings`.
+
+## Two consumers
+
+**mooncake** reads `index.yml`, whose `exports` table maps a short name to a
+preset file.
+
+**provision** reads no table. A preset is a component and a consumer `use`s it
+by file path, from a checkout the consumer's own plan clones and pins:
+
+```yaml
+- name: full gate
+  use: ~/.cache/provision/tools/rust-quality/ci.yml
+```
+
+Nothing fetches: the checkout is a step in the consumer's plan, `creates`-gated
+like any other, so a bump is a one-line version change and offline works. Inside
+a preset, `{{ component_dir }}` is this checkout's own directory — which is how
+a step reaches `scripts/` and how `rq/sync-config` reads the config it copies.
+A relative `path:` is not resolved against anything and so lands in the
+directory provision was invoked from, which is the consumer repo. Read from
+here, write over there, with no argument saying where "there" is.
+
+The presets carry no `name:` or `version:` root key. The tag is the version,
+and the consumer pins it.
+
+One preset is now provision-only: `sync-config.yml` copies with provision's
+`file` action, and mooncake's file actions are namespaced (`file.copy`,
+`file.write`), so a bare `file:` is an unknown action to it. The bodies are
+otherwise the same shape — `file.write` takes the same `path`, `state`, `src`
+and `mode` — so if mooncake ever needs this preset back, it is a key rename
+and not a rewrite. The other five presets run `shell` and are unaffected.
 
 ## Design
 

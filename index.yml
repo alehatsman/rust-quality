@@ -1,4 +1,3 @@
-name: rust-quality
 description: >-
   Shared Rust quality gate — canonical lint block, clippy/rustfmt/cargo-deny
   config, cargo aliases, a two-mode gate, and the agent-facing Rust guide.

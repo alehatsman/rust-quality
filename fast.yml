@@ -1,8 +1,6 @@
-name: rust-quality-ci-fast
 description: >-
   Fast pre-commit gate — lockfile drift, fmt, clippy, ai-lint on staged files,
   soft caps. No extra tools, no network.
-version: 2.0.0
 
 props:
   pkg_args:
@@ -24,3 +22,4 @@ steps:
       PKG_ARGS="{{ props.pkg_args }}" FEATURE_ARGS="{{ props.feature_args }}"
       CAP_LOC="{{ props.cap_loc }}"
       bash "{{ component_dir }}/scripts/gate.sh" fast
+    changed_when: "false"

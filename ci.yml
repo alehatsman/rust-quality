@@ -1,8 +1,6 @@
-name: rust-quality-ci
 description: >-
   Full pre-push gate — fmt, clippy, test + doctests, rustdoc, cargo-deny,
   cargo-machete, lint-block drift, soft caps. First failure stops the run.
-version: 2.0.0
 
 props:
   pkg_args:
@@ -26,3 +24,4 @@ steps:
       PKG_ARGS="{{ props.pkg_args }}" FEATURE_ARGS="{{ props.feature_args }}"
       CAP_LOC="{{ props.cap_loc }}"
       bash "{{ component_dir }}/scripts/gate.sh" full
+    changed_when: "false"
