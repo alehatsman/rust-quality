@@ -1,36 +1,24 @@
 name: rust-quality-sync-config
 description: >-
-  Drop the shared clippy.toml, rustfmt.toml and deny.toml into the consumer
-  repo root, then print the canonical lint block. src reads from the module
-  (component_dir); dest is relative and resolves against the consumer's
-  invocation dir.
-version: 1.0.0
+  Copy the shared config into the consumer repo — clippy.toml, rustfmt.toml,
+  deny.toml and .cargo/config.toml — then print the lint block, which cargo
+  gives us no way to copy.
+version: 2.0.0
 
 steps:
-  - name: install shared clippy.toml
-    file.copy:
-      src: "{{ component_dir }}/clippy.toml"
-      dest: "clippy.toml"
-      force: true
+  - name: clippy.toml
+    file.copy: { src: "{{ component_dir }}/clippy.toml", dest: "clippy.toml", force: true }
+  - name: rustfmt.toml
+    file.copy: { src: "{{ component_dir }}/rustfmt.toml", dest: "rustfmt.toml", force: true }
+  - name: deny.toml
+    file.copy: { src: "{{ component_dir }}/deny.toml", dest: "deny.toml", force: true }
+  - name: .cargo/config.toml
+    file.copy: { src: "{{ component_dir }}/aliases.toml", dest: ".cargo/config.toml", force: true }
 
-  - name: install shared rustfmt.toml
-    file.copy:
-      src: "{{ component_dir }}/rustfmt.toml"
-      dest: "rustfmt.toml"
-      force: true
-
-  - name: install shared deny.toml
-    file.copy:
-      src: "{{ component_dir }}/deny.toml"
-      dest: "deny.toml"
-      force: true
-
-  # The lint block cannot be copied: cargo has no include mechanism for
-  # manifests. Print it so it can be pasted into the workspace Cargo.toml;
-  # rq/lints-check then enforces it.
-  - name: print the canonical lint block
+  # Cargo has no include mechanism for manifests, so the lint levels are the
+  # one thing that cannot be a file copy. Print them; rq/lints-check enforces.
+  - name: print the lint block
     shell: |
-      echo "── paste the block below into the WORKSPACE ROOT Cargo.toml,"
-      echo "   then give every member crate:  [lints]  /  workspace = true"
-      echo "   rq/lints-check enforces both from then on ──"
+      echo "── paste into the WORKSPACE ROOT Cargo.toml, then give every member"
+      echo "   crate:  [lints]  /  workspace = true   — rq/lints-check enforces both ──"
       cat "{{ component_dir }}/lints.toml"

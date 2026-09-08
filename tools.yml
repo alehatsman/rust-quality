@@ -1,12 +1,11 @@
 name: rust-quality-tools
 description: >-
-  Install the gate toolchain (nextest, deny, machete, llvm-cov, semver-checks,
-  hack + the clippy/rustfmt components) and verify it is present.
-version: 1.0.0
+  Install the three tools the gate runs (nextest, deny, machete) plus the
+  clippy/rustfmt components, then verify.
+version: 2.0.0
 
 steps:
-  - name: install gate tools
-    shell: bash "{{ component_dir }}/scripts/install-tools.sh"
-
-  - name: verify tools present
-    shell: bash "{{ component_dir }}/scripts/check-tools.sh"
+  - name: install
+    shell: bash "{{ component_dir }}/scripts/tools.sh" install
+  - name: verify
+    shell: bash "{{ component_dir }}/scripts/tools.sh" check

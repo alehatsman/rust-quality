@@ -1,45 +1,106 @@
 # rust-quality
 
-Shared Rust quality-gate toolchain for the fleet — **one canonical source** for
-the lint block, the clippy/rustfmt/cargo-deny config, the static-analysis
-scripts, and the CI gates. Consumed as a [mooncake](https://github.com/alehatsman/mooncake)
-module. Sibling of `go-quality`; same shape, adapted where Rust differs.
-
-It also carries the **guide**:
+Shared Rust quality gate for the fleet — the canonical lint block, the
+clippy/rustfmt/cargo-deny config, cargo aliases, a two-mode gate, and the
+agent-facing guide. Consumed as a [mooncake](https://github.com/alehatsman/mooncake)
+module.
 
 - [docs/RUST.md](docs/RUST.md) — how to write it. Rules, gate markers, the 2026 trap list, a review checklist.
-- [docs/STACK.md](docs/STACK.md) — what to reach for. De-facto crate picks with versions, deviation triggers, and what we deliberately do not use.
+- [docs/STACK.md](docs/STACK.md) — what to reach for. De-facto crate picks with versions and deviation triggers.
+
+Go sibling: [go-quality](https://github.com/alehatsman/go-quality). Same finding
+schema, different shape — see [Why this is not a port](#why-this-is-not-a-port).
 
 ## What's here
 
 ```
-index.yml            module manifest (name + export → component map)
-lints.toml           canonical [workspace.lints] block — the single source of truth
-clippy.toml          lint tuning (test exemptions, thresholds, doc idents)
-rustfmt.toml         formatting, stable options only
-deny.toml            advisories + licenses + bans + sources policy
-docs/
-  RUST.md            the quality guide
-  STACK.md           the crate picks
+lints.toml       canonical [workspace.lints] — the single source of truth
+clippy.toml      lint tuning: test exemptions, thresholds, doc idents
+rustfmt.toml     formatting, stable options only
+deny.toml        advisories + licenses + bans + sources
+aliases.toml     cargo aliases + RUSTDOCFLAGS -> the consumer's .cargo/config.toml
 scripts/
-  ai-lint.sh         AI-smell sweep (stub macros, agent TODOs, prompt artifacts)
-  budget-status.sh   god-file + duplicate-dependency soft caps
-  lints-check.sh     lint-block drift: consumer Cargo.toml vs lints.toml
-  clippy-findings.sh clippy JSON diagnostics -> shared finding schema
-  install-tools.sh   install the gate toolchain
-  check-tools.sh     verify the toolchain is present
-  ci/fast.sh         pre-commit gate  (lockfile + fmt + check + ai-lint + budget)
-  ci/full.sh         pre-push gate    (fmt + build + clippy + test + doc + deny
-                                       + machete + lints-check + budget)
+  lib.sh         the checks cargo does not do, defined once
+  gate.sh        fast | full
+  findings.sh    JSONL for agents — the only thing here that speaks JSON
+  lints-check.sh lint-block drift (cargo cannot include manifests)
+  tools.sh       install | check
+docs/            the guide
 ```
+
+Six exports: `ci`, `ci-fast`, `tools`, `sync-config`, `lints-check`, `findings`.
+
+## Why this is not a port
+
+go-quality has a preset per stage because **Go's toolchain is many binaries** —
+gofmt, go vet, golangci-lint, govulncheck, gocyclo, goda, dupl, deadcode. Each
+needs its own invocation, its own flags, its own wrapper.
+
+Rust's toolchain is **one binary with subcommands, configured by files cargo
+reads natively**. That inverts the design:
+
+| | go-quality | rust-quality |
+|---|---|---|
+| Policy lives in | script flags | `Cargo.toml`, `clippy.toml`, `deny.toml` |
+| One-command stages | a preset each | a **cargo alias** (`cargo lint`, `cargo t`) |
+| Complexity cap | `gocyclo` + a budget script | `clippy::cognitive_complexity` + a threshold |
+| Stub detection | `ai-lint` grep | `clippy::todo` / `unimplemented` |
+
+The first cut of this repo mirrored go-quality file-for-file and measured badly:
+**17 of 21 presets carried one line of payload**, `ai-lint` was 18 lines of rules
+under 142 lines of scaffolding, four scripts each reimplemented the same JSON
+emitter, and one `.get(0).unwrap()` tripped three overlapping lints. Rebuilt on
+Rust's own grain:
+
+| | before | after |
+|---|---|---|
+| presets | 21 + index | **6** + index |
+| preset YAML | 486 lines | **145** |
+| scripts | 8 | **5** |
+| script lines | 745 | **509** |
+| script code (non-comment) | 475 | **342** |
+| clippy lint entries | 40 | **31** |
+
+Nothing enforced was lost. What went was wrapping.
+
+## Aliases before presets
+
+`rq/sync-config` installs `.cargo/config.toml`, so the common commands work with
+no mooncake, no module fetch and no YAML — in a terminal, in CI, in an editor:
+
+```
+cargo lint       # clippy, all targets, all features, -D warnings
+cargo t          # nextest
+cargo doctest    # nextest never runs doctests — a separate alias, not a silent gap
+cargo docs       # rustdoc; RUSTDOCFLAGS=-D warnings comes from [env]
+```
+
+A preset earns its place only when it does something an alias cannot: a
+multi-step gate with fail-fast ordering, or copying files into a consumer repo.
+
+## The gate
+
+`gate.sh fast` — pre-commit. Lockfile drift, `cargo fmt --check`, clippy,
+ai-lint on staged files, soft caps. No extra tools, no network.
+
+`gate.sh full` — pre-push. fmt, clippy, test + doctests, rustdoc, cargo-deny,
+cargo-machete, lint-block drift, soft caps.
+
+Four things the gate exists to get right, all of which pass silently otherwise:
+
+- **nextest never runs doctests.** They need a second invocation.
+- **`cargo test --doc` hard-errors** on a workspace with no lib target, so it is
+  asked for only when `cargo metadata` reports one.
+- **A separate `cargo build` step is a wasted full compile** — clippy and the
+  test profile already build everything. Dropped.
+- **`[workspace.lints]` does nothing** until every member opts in.
 
 ## The lint block is not a file copy
 
-`clippy.toml`, `rustfmt.toml` and `deny.toml` are dropped into the consumer by
-`rq/sync-config`. The lint levels cannot be: **cargo has no include mechanism
-for manifests**. So `lints.toml` is the canonical text, `rq/sync-config` prints
-it for pasting into the workspace root `Cargo.toml`, and `rq/lints-check`
-enforces it from then on:
+`clippy.toml`, `rustfmt.toml`, `deny.toml` and `.cargo/config.toml` are copied
+in by `rq/sync-config`. The lint levels cannot be: **cargo has no include
+mechanism for manifests**. So `lints.toml` is the canonical text, sync-config
+prints it, and `rq/lints-check` enforces it:
 
 ```
 lint-missing    canonical lint absent from the consumer manifest
@@ -47,127 +108,93 @@ lint-drift      present at a different level or priority
 lints-opt-out   workspace member without `[lints] workspace = true`
 ```
 
-Adding a lint fleet-wide means editing `lints.toml` here; every consumer's gate
-then fails until it catches up. That is the intended pressure.
-
-Two details that silently break the block if you get them wrong:
+Two ways to get it silently wrong:
 
 - A lint **group** entry needs `priority = -1`, or the group re-enables every
   individual `allow` below it.
-- `[workspace.lints]` does **nothing** until each member declares
+- `[workspace.lints]` applies to nothing until each member declares
   `[lints]` / `workspace = true`.
 
 ## Stance
 
-Inherited from `go-quality`: enable the bug-catching groups, disable the
-style-pedantry members, cherry-pick from `restriction`, never enable that group
-wholesale. Concretely — clippy `all` + `pedantic` with exactly ten pedantic
-opt-outs, plus 28 individually named lints (mostly `restriction`) covering panic
-surface, silent failure, unsafe hygiene, numeric traps and lint-suppression
-discipline; `nursery` off except `cognitive_complexity`. On the rustc side: 11
-lints including `unsafe_code`, `missing_docs`, `unreachable_pub` and
-`non_ascii_idents`, plus 3 rustdoc lints.
+clippy `all` + `pedantic` with ten pedantic opt-outs, plus 31 individually named
+lints covering panic surface, silent failure, unsafe hygiene and
+lint-suppression discipline. `nursery` off except `cognitive_complexity`, which
+is the complexity cap — no second tool, no second compile.
 
-`unsafe_code = "warn"` is on fleet-wide. Crates that need unsafe opt out in
-their own manifest with a reason, and the hygiene lints
-(`undocumented_unsafe_blocks`, `multiple_unsafe_ops_per_block`) carry the weight
+`unsafe_code = "warn"` fleet-wide; crates that need it opt out in their own
+manifest with a reason, and `undocumented_unsafe_blocks` carries the weight
 from there.
 
-Complexity has no separate script: clippy's `cognitive_complexity` plus
-`cognitive-complexity-threshold = 30` in `clippy.toml` is the cap, enforced by
-the lint gate with no second compile and no extra tool.
+Lints are cherry-picked, never taken as a group from `restriction` — and
+overlaps are cut. `get_unwrap`, `unwrap_in_result` and `panic_in_result_fn` all
+fire on code `unwrap_used`/`panic` already flag; `float_cmp_const` is covered by
+pedantic's `float_cmp`. One finding per defect.
 
-## Machine-readable findings (`--format jsonl` + `rq/findings`)
+## Findings for agents
 
-Every emitter also speaks **agent**. `--format jsonl` writes one finding per
-line on stdout (human status routed to stderr) in the shared fleet schema:
+`rq/findings` writes `.gate/findings.jsonl` — clippy diagnostics, ai-lint,
+lint-block drift and soft caps in the schema shared with go-quality:
 
 ```json
-{"tool":"clippy","rule":"clippy::unwrap_used","level":"warning","path":"crates/a/src/lib.rs","line":7,"col":5,"message":"used `unwrap()` on an `Option` value","fingerprint":"clippy::unwrap_used:crates/a/src/lib.rs:7"}
+{"tool":"clippy","rule":"clippy::indexing_slicing","level":"warning","path":"crates/a/src/lib.rs","line":25,"col":5,"message":"indexing may panic","fingerprint":"clippy::indexing_slicing:crates/a/src/lib.rs:25"}
 ```
 
-Fields: `tool, rule, level (error|warning|note), path, line, col?, message,
-fingerprint`. `level:error` = gate-failing. Emitters: `clippy` (the big one —
-every lint in `lints.toml` lands here), `ai-lint` (every smell = error),
-`lints-check` (drift = error), `budget` (god files + duplicate deps = warning).
-Text output is byte-identical without the flag.
+`level:error` is gate-failing. A pure producer: it never re-gates and never
+aborts on a finding. Dedup across runs via `fingerprint`.
 
-The **`rq/findings`** preset aggregates everything into one
-`.gate/findings.jsonl` (gitignored, truncated per run). It is a **pure
-producer** — emitters never abort the sweep and it does not re-gate;
-enforcement stays with `rq/ci`. Dedup across runs via each finding's
-`fingerprint`.
+Only `findings.sh` speaks JSON. `gate.sh` renders the same checks for humans
+from the same functions in `lib.sh` — the format lives at the edge.
 
-```yaml
-findings: rq/findings   # -> .gate/findings.jsonl
-```
-
-Not for the local fast path: `clippy-findings.sh` busts the clippy cache
-(`cargo clean -p` per workspace package) because **a warm clippy run reports
-nothing at all**, and a gate step that silently reports nothing is worse than
-no gate step.
+Not for the pre-commit path: the clippy pass runs `cargo clean -p` on the
+workspace packages first, because **a warm `cargo clippy` prints nothing at
+all**, and a check that silently reports nothing is worse than no check.
 
 ## Knobs
 
 | Var | Default | Meaning |
 |---|---|---|
 | `PKG_ARGS` | `--workspace` | Package selector passed to cargo |
-| `FEATURE_ARGS` | `--all-features` | Feature selector — set `""` for mutually exclusive features |
+| `FEATURE_ARGS` | `--all-features` | Set `""` for mutually exclusive features |
 | `CAP_LOC` | `500` | God-file soft cap, non-test `.rs` |
-
-## Reconciliation notes (what stayed out, and why)
-
-- **`cargo-audit`** — subsumed by `cargo deny check advisories`. One tool, one
-  config file, one thing to keep current.
-- **`cargo-udeps`** — needs nightly. `cargo-machete` is stable and catches the
-  same class.
-- **dupl / clone detection** — no credible Rust implementation exists. Nothing
-  to wire; the god-file cap is the only structural proxy we trust.
-- **arch-snapshot** — Go's package graph has no clean Rust analogue worth a new
-  dependency. The one signal that carries, duplicate dependency versions, is
-  folded into `budget-status.sh`.
-- **structure-ratchet, SARIF** — deferred. The budget emitters are already
-  shaped for the ratchet to drop in unchanged; `clippy-sarif` exists upstream
-  for the SARIF leg.
-- **Project-specific budgets and CI stages** — layered by each consumer after
-  this gate, not here.
 
 ## Consuming this module
 
 ```yaml
-vars: { PKG_ARGS: "--workspace", FEATURE_ARGS: "--all-features" }
 modules:
   rq:
-    source: "github.com/alehatsman/rust-quality@v0.1.0"
+    source: "github.com/alehatsman/rust-quality@v0.2.0"
     props:
-      pkg_args: "{{ PKG_ARGS }}"      # only exports that declare it receive it
       feature_args: "{{ FEATURE_ARGS }}"
 
 tasks:
-  fmt:     rq/fmt
-  lint:    rq/lint
-  test:    rq/test
-  deny:    rq/deny
   ci:      rq/ci
   ci-fast: rq/ci-fast
-  # budget-status / ai-lint / lints-check / tools declare neither prop —
-  # the defaults are filtered out, so these wrappers work too:
-  budget-status: rq/budget-status
-  lints-check:   rq/lints-check
-  findings:      rq/findings
+  findings: rq/findings
 ```
 
-Out-of-band presets — too slow or too project-specific for the push path — are
-wired into a nightly or release task instead: `rq/cov`, `rq/semver`,
-`rq/features`, `rq/miri`.
-
-## First-time setup in a consumer repo
+First-time setup:
 
 ```
-mooncake task tools          # rq/tools       — install the toolchain
-mooncake task sync-config    # rq/sync-config — drop the configs, print the lint block
-# paste the printed block into the workspace root Cargo.toml
+mooncake task tools          # three tools + clippy/rustfmt components
+mooncake task sync-config    # configs + cargo aliases; prints the lint block
+# paste the block into the workspace root Cargo.toml
 # add `[lints]` / `workspace = true` to every member crate
-mooncake task lints-check    # rq/lints-check — confirm it took
-mooncake task ci             # rq/ci          — full gate
+mooncake task ci
 ```
+
+## Not here, on purpose
+
+- **`cargo build` / `check` / `doc` / `machete` presets** — one cargo call each.
+  Aliases, or one line in your own `tasks.yml`.
+- **cov / semver / features / miri presets** — the commands are in
+  `tools.sh install` output. A preset that wraps one invocation you run twice a
+  year is a file to maintain, not leverage.
+- **cargo-audit** — `cargo deny check advisories` covers it.
+- **cargo-udeps** — nightly. `cargo-machete` is stable.
+- **dupl / clone detection** — no credible Rust implementation exists.
+- **arch-snapshot** — Go's package graph has no Rust analogue worth a
+  dependency. Duplicate dep versions, the one signal that carries, is in the
+  soft caps.
+- **structure-ratchet, SARIF** — deferred. `lib.sh` records are already the
+  right shape for the ratchet; `clippy-sarif` exists upstream.

@@ -1,156 +1,125 @@
 # rust-quality — SPEC
 
-Status: v1 draft, 2026-09-08. Mirrors `go-quality` for Rust; not a blind port.
+v2, 2026-09-08. Decisions and evidence. The README describes what exists; this
+records why, and what was measured to justify it.
 
 ## Goal
 
-One canonical source for Rust lint config, quality gates, and the agent-facing
-Rust guide, consumed as a mooncake module by every Rust repo in the fleet.
+One canonical source for Rust lint policy, the quality gate, and the
+agent-facing guide, consumed as a mooncake module.
 
-Two deliverables, one repo:
+## The governing decision
 
-1. **Gate module** — configs + scripts + mooncake presets. Machine-enforced.
-2. **Guide** — `docs/RUST.md` (how to write it) and `docs/STACK.md` (what to
-   reach for). Human/agent-read, not enforced.
+**Ship config, not command wrappers.**
 
-## Scope
+go-quality is one preset per stage because Go's toolchain is eight binaries.
+Rust's is one binary reading config files natively, so the same layout produces
+wrappers with nothing inside them. Measured on v1, which was a direct port:
 
-### In
+- **17 of 21 presets had exactly one line of payload** — 486 lines of YAML
+  carrying ~40 lines of command.
+- `ai-lint.sh`: **18 lines of rules, 142 lines of scaffolding**.
+- Four scripts each reimplemented the JSONL emitter (8–15 lines apiece).
+- A separate `cargo build --all-targets` step in the full gate was **a wasted
+  full compile** — clippy and the test profile already build everything.
 
-- Shared configs: `lints.toml` (canonical `[workspace.lints]`), `clippy.toml`,
-  `rustfmt.toml`, `deny.toml`.
-- Gates: check, fmt, lint, test, build, doc, deny, machete, cov, semver,
-  features, miri, ai-lint, budget, lints-check.
-- Aggregate gates: `ci-fast` (pre-commit), `ci` (pre-push).
-- JSONL findings stream (`.gate/findings.jsonl`) in go-quality's schema, with
-  clippy's native `--message-format=json` folded in.
-- Toolchain install/verify.
-- Two guide docs.
+Consequences, in order of leverage:
 
-### Out (deferred, with reasons)
+1. Anything that is one cargo invocation becomes a **cargo alias** shipped in
+   `.cargo/config.toml`. Works with no mooncake at all.
+2. A preset exists only for multi-step fail-fast ordering, or for copying
+   config into a consumer.
+3. JSON lives at **one** edge (`findings.sh`). `gate.sh` renders the same
+   checks for humans from the same functions in `lib.sh`.
+4. Checks clippy already performs are deleted, not duplicated.
 
-- **structure-ratchet** — needs the budget metrics to settle first. The budget
-  emitters are shaped so the ratchet drops in later unchanged.
-- **SARIF** — leaf format change; `clippy-sarif` already exists upstream. v2.
-- **dupl** — no credible Rust clone detector. Nothing to wire.
-- **arch-snapshot** — Go's package graph has no clean Rust analogue worth the
-  dependency. The one signal that carries (`cargo tree --duplicates`) is folded
-  into `budget-status` instead.
-- **cargo-audit** — subsumed by `cargo deny check advisories`. One tool, one
-  config, fewer deps.
-- **cargo-udeps** — needs nightly. `cargo-machete` is stable and good enough.
+## Evidence for the lint cuts
+
+Probe crate, clippy 1.96, canonical block applied:
+
+| Probe | Lints fired | Conclusion |
+|---|---|---|
+| `*v.get(0).unwrap()` in a `-> Result` fn | `get_first`, `get_unwrap`, `unwrap_used` | `get_unwrap` and `unwrap_in_result` are subsets of `unwrap_used` — cut |
+| `panic!()` in a `-> Result` fn | `panic`, `panic_in_result_fn` | subset of `panic` — cut |
+| `x == 1.0` | `float_cmp` (from pedantic) | `float_cmp_const` redundant — cut |
+| `todo!()`, `unimplemented!()`, `unreachable!()` | `clippy::todo`, `::unimplemented`, `::unreachable` | ai-lint's `stub-macro` rule was pure duplication — cut |
+
+Also cut as near-inert: `lossy_float_literal`, `unnecessary_safety_comment`,
+`unnecessary_safety_doc`, `tests_outside_test_module`, `unreachable` (legitimate
+in match arms the compiler cannot prove exhaustive).
+
+40 clippy entries → 31. Nothing enforced was lost; overlapping reports were.
 
 ## Interfaces
 
-### Env knobs (shared by all scripts)
+Env: `PKG_ARGS` (`--workspace`), `FEATURE_ARGS` (`--all-features`), `CAP_LOC`
+(`500`).
 
-| Var             | Default          | Meaning                                    |
-|-----------------|------------------|--------------------------------------------|
-| `PKG_ARGS`      | `--workspace`    | Package selector passed to cargo           |
-| `FEATURE_ARGS`  | `--all-features` | Feature selector. Set `""` for exclusive features |
-| `CAP_LOC`       | `500`            | God-file soft cap, non-test `.rs`          |
-| `CAP_COGNITIVE` | `30`             | Cognitive-complexity soft cap (clippy)     |
-| `GATE_DIR`      | `.gate`          | Findings artifact dir                      |
+`lib.sh` records — the internal contract, format-free:
 
-### Findings schema (identical to go-quality)
-
-```json
-{"tool":"…","rule":"…","level":"error|warning|note","path":"…","line":1,"col":1,
- "message":"…","fingerprint":"rule:path:line"}
+```
+rule<TAB>level<TAB>path<TAB>line<TAB>message
 ```
 
-`level:error` = gate-failing. stdout is pure JSONL under `--format jsonl`;
-human status goes to stderr.
+Finding schema on the wire, shared with go-quality:
 
-### mooncake exports (`rq/*`)
+```json
+{"tool":..,"rule":..,"level":"error|warning|note","path":..,"line":N,"col":N?,
+ "message":..,"fingerprint":"rule:path:line"}
+```
 
-`default`/`ci`, `ci-fast`, `tools`, `sync-config`, `check`, `fmt`, `lint`,
-`test`, `build`, `doc`, `deny`, `machete`, `cov`, `semver`, `features`, `miri`,
-`ai-lint`, `budget-status`, `lints-check`, `findings`.
-
-### Gate composition
-
-`ci-fast` (pre-commit, cheap):
-1. `cargo check` — type check, all targets
-2. `Cargo.lock` drift (`--locked`)
-3. `cargo fmt --check` on staged `.rs`
-4. ai-lint on staged `.rs`
-5. budget soft caps
-
-`ci` (pre-push, first failure stops):
-1. build `--locked`
-2. test — nextest **plus** doctests (nextest does not run doctests)
-3. `cargo fmt --check`, whole tree
-4. clippy `-D warnings`
-5. rustdoc `-D warnings`
-6. `cargo deny check`
-7. `cargo machete`
-8. duplicate dep versions (informational)
-9. budget soft caps
-
-Opt-in / out of band: `cov`, `semver`, `features`, `miri`. Too slow or too
-project-specific for the push path.
+Exports: `ci`, `ci-fast`, `tools`, `sync-config`, `lints-check`, `findings`.
 
 ## Edge cases
 
-- **`--all-features` breaks mutually-exclusive features.** Documented; override
-  with `FEATURE_ARGS=""`.
-- **`[workspace.lints]` cannot be file-copied.** Cargo has no include
-  mechanism. `sync-config` copies the three real config files; `lints-check.sh`
-  asserts the consumer's `Cargo.toml` carries the canonical lint keys and
-  reports drift. Enforcement, not mutation.
-- **Lint group + individual allow needs `priority`.** Group entries carry
-  `priority = -1` or the allows are overridden.
-- **Member crates must opt in** with `[lints] workspace = true`. lints-check
-  verifies this too.
-- **`imports_granularity` / `group_imports` are nightly-only rustfmt.** Not in
-  `rustfmt.toml`. Documented as a trap.
-- **No git repo / no staged files.** Scripts degrade to a clean skip, exit 0.
-- **Missing tools.** `ci` treats them as fatal; individual presets say what to
-  install.
-- **`unsafe_code = "warn"`** by default; crates that need unsafe set it to
-  `allow` locally with a reason and pick up `undocumented_unsafe_blocks`.
+- `--all-features` cannot build mutually exclusive features → `FEATURE_ARGS=""`.
+- `[workspace.lints]` cannot be file-copied; cargo has no manifest include.
+  `lints-check.sh` enforces instead of mutating.
+- A lint group entry without `priority = -1` re-enables every `allow` below it.
+- Members must declare `[lints] workspace = true` or the block applies to
+  nothing.
+- nextest never runs doctests; `cargo test --doc` hard-errors with no lib
+  target, so `cargo metadata` is consulted first.
+- A warm `cargo clippy` prints nothing — `findings.sh` runs `cargo clean -p` on
+  workspace packages only, keeping deps warm.
+- `imports_granularity` / `group_imports` are nightly-only rustfmt. Kept out.
+- No git repo, no staged files, no lockfile → clean skip or a specific remedy,
+  never a stack trace.
 
-## Validation — what was actually run (2026-09-08)
+## Validation — actually run, 2026-09-08
 
-Local toolchain: cargo/rustc/clippy/rustfmt **1.96.0**. Latest stable is 1.98.1;
-nothing in the configs depends on anything newer, and every lint name was
-checked against 1.96, which is the safe intersection.
+Toolchain: cargo/clippy/rustfmt **1.96.0** (latest stable 1.98.1; nothing here
+depends on anything newer, and 1.96 is the safe intersection for lint names).
 
-Done:
-
-- `shellcheck` + `bash -n` clean on all 8 scripts.
-- **lints.toml parsed by real clippy.** A scratch workspace pastes the block into
-  its manifest; `cargo clippy` reports **no `unknown lint`**. Negative control:
+- `shellcheck -x` + `bash -n` clean on all 5 scripts.
+- **lints.toml parsed by real clippy — no `unknown lint`.** Negative control:
   injecting `no_such_lint_xyz` does produce `E0602`, so the check has teeth.
-- **Individual lints confirmed firing**: `indexing_slicing`, `unwrap_used`,
-  `clone_on_ref_ptr`, `allow_attributes`, `allow_attributes_without_reason`,
-  `doc_markdown`.
-- **rustfmt.toml accepted with zero warnings.** Negative control: adding
-  `bogus_key_xyz` warns "Unknown configuration option", and adding
-  `imports_granularity` warns "unstable features are only available in nightly"
-  — the documented trap, reproduced.
-- **`ci/fast.sh` green end to end** on a fixture workspace (all 5 steps).
-- **`ci/full.sh` steps 1–5 green**; step 6 correctly hard-fails with the install
-  hint because cargo-deny is absent on this machine.
-- **All 4 emitters** produce schema-conformant JSONL with unique fingerprints;
-  every line validated with `jq -e`; mixed error/warning stream verified.
-- **`lints-check.sh`** verified on all four states: clean, missing lint, drifted
-  level, member not opted in.
-- **22 preset YAML files parse** (`yq -e`); every `index.yml` export resolves to
-  a real file; no orphan presets.
+- **rustfmt.toml accepted with zero warnings.** Negative control: a bogus key
+  warns, and `imports_granularity` warns "unstable features are only available
+  in nightly" — the documented trap, reproduced.
+- **Cargo aliases work**: `cargo lint` and `cargo docs` run in a fixture with
+  only `.cargo/config.toml` present.
+- **Fast gate green** on a clean fixture; **exits 1** on a dirty one. This is a
+  regression test, not a smoke test: `render` was originally called through a
+  pipe, so its `FAILED=1` was discarded by the subshell and the gate would have
+  exited 0 on error-level findings. Fixed with process substitution.
+- **Full gate** steps 1–4 green; step 5 hard-fails with an install hint because
+  cargo-deny is absent here.
+- **findings.sh**: 6 findings from all four sources (clippy, rq, lints-check),
+  every line valid JSON, every line schema-conformant, 6/6 unique fingerprints.
+- **lints-check** verified on four states: clean, missing lint, drifted level,
+  member not opted in.
+- **Missing vs stale lockfile** produce different, correct remedies — found by
+  running the gate, not by reading it.
+- 7 preset YAML files parse; every export resolves; no orphans.
 
-Not done, and why:
+## Known gaps
 
-- **`deny.toml` is unvalidated.** cargo-deny is not installed on this machine
-  and installing it was out of scope. The schema is written against the
-  documented v2 format; run `cargo deny check` once after `rq/tools` and expect
-  to adjust `[advisories]` if the schema has moved.
+- **`deny.toml` is unvalidated.** cargo-deny is not installed here. Written to
+  the documented v2 schema; run `cargo deny check` once after `rq/tools`.
 - **Presets are not machine-validated.** `mooncake validate -c <component>`
-  parses a component as a playbook and reports a false `unknown field \`name\``
-  — it does the same for go-quality's shipped components, so this is a mooncake
-  gap, not a defect here. Validation basis is YAML well-formedness plus
-  structural parity with go-quality's working presets.
-- **Not run against a real project.** No Rust repo in the fleet consumes this
-  yet. First consumer will shake out the `FEATURE_ARGS` default and the
-  cargo-deny license allow-list.
+  parses a component as a playbook and reports a false `unknown field name` —
+  it does the same to go-quality's shipped components, so this is a mooncake
+  gap (alehatsman/mooncake#54), not a defect here.
+- **No real consumer yet.** The first will shake out the `FEATURE_ARGS` default
+  and the cargo-deny license allow-list.

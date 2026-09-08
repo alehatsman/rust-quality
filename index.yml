@@ -1,38 +1,16 @@
 name: rust-quality
 description: >-
-  Shared Rust quality-gate toolchain — one canonical lint block, clippy /
-  rustfmt / cargo-deny config, gate scripts, and the agent-facing Rust guide.
-# Export names map to component (preset) files at the module root. component_dir
-# resolves to filepath.Dir of the component file, so keeping these at the root
-# (alongside scripts/ and the shared configs) lets each component reference
-# `{{ component_dir }}/scripts/...` directly.
+  Shared Rust quality gate — canonical lint block, clippy/rustfmt/cargo-deny
+  config, cargo aliases, a two-mode gate, and the agent-facing Rust guide.
+# Six exports, not twenty. Anything that is a single cargo invocation is a
+# cargo alias (see aliases.toml), not a preset: `cargo lint`, `cargo t`,
+# `cargo docs`. Presets exist only for multi-step gates with fail-fast
+# ordering, and for getting config into a consumer repo.
 exports:
-  # Aggregate gates
   default: ci.yml              # full pre-push gate
   ci: ci.yml
-  ci-fast: fast.yml            # fast pre-commit gate (no full build)
-  tools: tools.yml             # install + verify the gate toolchain
-  sync-config: sync-config.yml # drop clippy/rustfmt/deny config into the consumer
-
-  # Individual stages
-  check: check.yml
-  fmt: fmt.yml
-  lint: lint.yml
-  test: test.yml
-  build: build.yml
-  doc: doc.yml
-  deny: deny.yml               # advisories + licenses + bans + sources
-  machete: machete.yml         # unused dependencies
-  lints-check: lints-check.yml # lint-block drift vs lints.toml
-  ai-lint: ai-lint.yml
-  budget-status: budget-status.yml
-
-  # Out of band — too slow or too project-specific for the push path
-  cov: cov.yml                 # coverage (cargo-llvm-cov)
-  semver: semver.yml           # public API breakage (libraries)
-  features: features.yml       # feature powerset (cargo-hack)
-  miri: miri.yml               # undefined behaviour (crates with unsafe)
-
-  # Agent-facing
-  clippy-findings: clippy-findings.yml
-  findings: findings.yml       # aggregate JSONL -> .gate/findings.jsonl
+  ci-fast: fast.yml            # pre-commit; no extra tools, no network
+  tools: tools.yml             # install + verify the three gate tools
+  sync-config: sync-config.yml # configs + cargo aliases into the consumer
+  lints-check: lints-check.yml # lint-block drift (cargo cannot include manifests)
+  findings: findings.yml       # JSONL for agents -> .gate/findings.jsonl

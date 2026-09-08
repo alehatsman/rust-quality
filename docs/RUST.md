@@ -49,8 +49,8 @@ Companion: [STACK.md](STACK.md) — what to reach for.
     `main.rs` is logic you cannot unit-test.
 12. **No `mod.rs`.** `foo.rs` beside `foo/`.
 13. **Features are additive, always.** A feature may add API; it may never
-    remove or change one. Verify with the feature powerset (`rq/features`), not
-    by hoping. `M-FEATURES-ADDITIVE`.
+    remove or change one. Verify with `cargo hack check
+    --feature-powerset --depth 2`, not by hoping. `M-FEATURES-ADDITIVE`.
 14. **One public path per item.** Re-exporting the same type through three
     modules triples the API surface an agent has to reason about.
     `M-SINGLE-ITEM-PATH`. No glob re-exports, no preludes.
@@ -157,7 +157,7 @@ Companion: [STACK.md](STACK.md) — what to reach for.
 49. **Wrap it in a safe API whose signature makes the invariant unviolable.**
     If a caller can trigger UB without writing `unsafe`, the wrapper is unsound
     and unsound is a bug even when nothing crashes. `M-UNSOUND`.
-50. **Run Miri** (`rq/miri`) and fuzz anything that parses bytes. The borrow
+50. **Run Miri** (`cargo +nightly miri test`) and fuzz anything that parses bytes. The borrow
     checker is static; UB is dynamic.
 51. **Valid reasons for unsafe: FFI, a genuinely novel abstraction, or a
     profiled hot path.** "It was easier" is not one.

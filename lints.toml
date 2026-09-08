@@ -53,15 +53,14 @@ implicit_hasher = "allow"            # forces a generic param on every pub HashM
 unnecessary_debug_formatting = "allow" # `{:?}` on Path is the readable choice
 
 # ── restriction: cherry-picked, each catches a real defect class ──────────────
-# Panic surface. Tests are exempted via clippy.toml.
+# Panic surface. Tests are exempted via clippy.toml. Deliberately NOT listed:
+# get_unwrap, unwrap_in_result and panic_in_result_fn all fire on code that
+# `unwrap_used`/`panic` already flag — verified on a probe crate, where one
+# `.get(0).unwrap()` tripped three lints at once. One finding per defect.
 unwrap_used = "warn"
-get_unwrap = "warn"
-unwrap_in_result = "warn"
 panic = "warn"
-panic_in_result_fn = "warn"
 todo = "warn"
 unimplemented = "warn"
-unreachable = "warn"
 indexing_slicing = "warn"            # `v[i]` panics; `.get(i)` does not
 string_slice = "warn"                # `&s[..n]` panics on a UTF-8 boundary
 
@@ -75,13 +74,9 @@ assertions_on_result_states = "warn" # `assert!(r.is_ok())` hides the error
 # the ones that opt out.
 undocumented_unsafe_blocks = "warn"
 multiple_unsafe_ops_per_block = "warn"
-unnecessary_safety_comment = "warn"
-unnecessary_safety_doc = "warn"
 mem_forget = "warn"
 
-# Numbers.
-float_cmp_const = "warn"
-lossy_float_literal = "warn"
+# Numbers. `float_cmp` comes from pedantic and already covers the const case.
 
 # Complexity soft cap. The one nursery lint we take: it is the clippy-side
 # twin of go-quality's gocyclo ratchet. Threshold lives in clippy.toml.
@@ -91,7 +86,6 @@ cognitive_complexity = "warn"
 clone_on_ref_ptr = "warn"            # `Arc::clone(&x)` says what it costs
 rc_mutex = "warn"                    # `Rc<Mutex<_>>` is a design error
 dbg_macro = "warn"
-tests_outside_test_module = "warn"
 
 # Lint suppression is itself reviewable (M-LINT-OVERRIDE-EXPECT).
 allow_attributes = "warn"                # use `#[expect]`: it warns once it's stale
