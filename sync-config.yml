@@ -29,6 +29,12 @@ steps:
     file: { path: "{{ props.dir }}/rustfmt.toml", state: file, src: "{{ component_dir }}/rustfmt.toml" }
   - name: deny.toml
     file: { path: "{{ props.dir }}/deny.toml", state: file, src: "{{ component_dir }}/deny.toml" }
+  # `file` writes a file, it does not build the path to it, and a crate that
+  # has never had cargo config has no `.cargo/`. At a repo root the directory
+  # usually already exists, which is why this only showed up once `dir` pointed
+  # the preset at a crate that had never been configured.
+  - name: .cargo
+    file: { path: "{{ props.dir }}/.cargo", state: dir }
   - name: .cargo/config.toml
     file: { path: "{{ props.dir }}/.cargo/config.toml", state: file, src: "{{ component_dir }}/aliases.toml" }
 
