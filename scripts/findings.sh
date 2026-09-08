@@ -21,8 +21,13 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source-path=SCRIPTDIR
 . "$HERE/lib.sh"
 
-PKG_ARGS="${PKG_ARGS:---workspace}"
-FEATURE_ARGS="${FEATURE_ARGS:---all-features}"
+# `${VAR-default}`, not `${VAR:-default}`: the second substitutes the
+# default for an EMPTY value too, so `FEATURE_ARGS=""` -- which the header
+# above documents as the escape hatch for a crate that cannot take
+# `--all-features` -- silently got `--all-features` anyway. The knob was
+# unusable, and the failure looked like the crate's fault.
+PKG_ARGS="${PKG_ARGS---workspace}"
+FEATURE_ARGS="${FEATURE_ARGS---all-features}"
 OUT="${1:-}"
 
 # Gate the crate the caller is standing in. A consumer whose crates are not one
