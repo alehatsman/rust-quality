@@ -1,8 +1,8 @@
 # rust-quality — shared cargo-deny policy.
 #
-# One tool covers what Go needs two for: `advisories` is govulncheck's job,
-# `bans`/`licenses`/`sources` have no Go analogue and matter more in Rust
-# because any dependency's build.rs runs on your machine at compile time.
+# One tool, four policies. `advisories` is the RustSec feed; `bans`,
+# `licenses` and `sources` matter because any dependency's build.rs runs on
+# your machine at compile time.
 
 [graph]
 all-features = true

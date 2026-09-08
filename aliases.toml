@@ -1,12 +1,11 @@
 # rust-quality — cargo config, copied to .cargo/config.toml by rq/sync-config.
 #
-# This is the piece the previous layout got backwards: it wrapped `cargo check`
-# and `cargo build` in mooncake presets, when cargo already has a first-class
-# mechanism for named commands. Aliases work in the terminal, in CI, and in an
-# editor task runner — no mooncake, no module fetch, no YAML.
+# Cargo has a first-class mechanism for named commands, so the everyday ones
+# live here rather than in a task runner: they work in a terminal, in CI, and in
+# an editor, with no mooncake, no module fetch and no YAML.
 #
-# Presets remain only for what aliases genuinely cannot do: multi-step gates
-# with fail-fast ordering, and copying config into a consumer repo.
+# Presets are reserved for what an alias cannot do: multi-step gates with
+# fail-fast ordering, and copying config into a consumer repo.
 
 [alias]
 lint = "clippy --locked --all-targets --all-features -- -D warnings"

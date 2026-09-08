@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # findings.sh — the agent-facing view: every finding as one JSON object per
-# line, in the fleet schema shared with go-quality.
+# line, in the shared fleet schema.
 #
 #   {"tool":..,"rule":..,"level":"error|warning|note","path":..,"line":N,
 #    "col":N?,"message":..,"fingerprint":"rule:path:line"}

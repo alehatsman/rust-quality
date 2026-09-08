@@ -8,9 +8,6 @@ module.
 - [docs/RUST.md](docs/RUST.md) — how to write it. Rules, gate markers, the 2026 trap list, a review checklist.
 - [docs/STACK.md](docs/STACK.md) — what to reach for. De-facto crate picks with versions and deviation triggers.
 
-Go sibling: [go-quality](https://github.com/alehatsman/go-quality). Same finding
-schema, different shape — see [Why this is not a port](#why-this-is-not-a-port).
-
 ## What's here
 
 ```
@@ -30,43 +27,15 @@ docs/            the guide
 
 Six exports: `ci`, `ci-fast`, `tools`, `sync-config`, `lints-check`, `findings`.
 
-## Why this is not a port
+## Design
 
-go-quality has a preset per stage because **Go's toolchain is many binaries** —
-gofmt, go vet, golangci-lint, govulncheck, gocyclo, goda, dupl, deadcode. Each
-needs its own invocation, its own flags, its own wrapper.
+Cargo is the interface. It reads `Cargo.toml`, `clippy.toml`, `rustfmt.toml`,
+`deny.toml` and `.cargo/config.toml` without being asked, so **this repo ships
+config, not command wrappers**. Three rules follow.
 
-Rust's toolchain is **one binary with subcommands, configured by files cargo
-reads natively**. That inverts the design:
-
-| | go-quality | rust-quality |
-|---|---|---|
-| Policy lives in | script flags | `Cargo.toml`, `clippy.toml`, `deny.toml` |
-| One-command stages | a preset each | a **cargo alias** (`cargo lint`, `cargo t`) |
-| Complexity cap | `gocyclo` + a budget script | `clippy::cognitive_complexity` + a threshold |
-| Stub detection | `ai-lint` grep | `clippy::todo` / `unimplemented` |
-
-The first cut of this repo mirrored go-quality file-for-file and measured badly:
-**17 of 21 presets carried one line of payload**, `ai-lint` was 18 lines of rules
-under 142 lines of scaffolding, four scripts each reimplemented the same JSON
-emitter, and one `.get(0).unwrap()` tripped three overlapping lints. Rebuilt on
-Rust's own grain:
-
-| | before | after |
-|---|---|---|
-| presets | 21 + index | **6** + index |
-| preset YAML | 486 lines | **145** |
-| scripts | 8 | **5** |
-| script lines | 745 | **509** |
-| script code (non-comment) | 475 | **342** |
-| clippy lint entries | 40 | **31** |
-
-Nothing enforced was lost. What went was wrapping.
-
-## Aliases before presets
-
-`rq/sync-config` installs `.cargo/config.toml`, so the common commands work with
-no mooncake, no module fetch and no YAML — in a terminal, in CI, in an editor:
+**One cargo invocation is an alias, not a preset.** `rq/sync-config` installs
+`.cargo/config.toml`, so the everyday commands work in a terminal, in CI and in
+an editor with no mooncake and no YAML:
 
 ```
 cargo lint       # clippy, all targets, all features, -D warnings
@@ -75,8 +44,13 @@ cargo doctest    # nextest never runs doctests — a separate alias, not a silen
 cargo docs       # rustdoc; RUSTDOCFLAGS=-D warnings comes from [env]
 ```
 
-A preset earns its place only when it does something an alias cannot: a
-multi-step gate with fail-fast ordering, or copying files into a consumer repo.
+**A preset exists only for what an alias cannot do** — a multi-step gate with
+fail-fast ordering, or getting config into a consumer repo. Six of them.
+
+**A check clippy already performs is not written twice.** Complexity is
+`clippy::cognitive_complexity` with a threshold, not a second tool. Stub
+detection is `clippy::todo` / `unimplemented`, not a grep. Overlapping lints are
+cut so one defect produces one finding.
 
 ## The gate
 
@@ -134,7 +108,7 @@ pedantic's `float_cmp`. One finding per defect.
 ## Findings for agents
 
 `rq/findings` writes `.gate/findings.jsonl` — clippy diagnostics, ai-lint,
-lint-block drift and soft caps in the schema shared with go-quality:
+lint-block drift and soft caps in the shared fleet schema:
 
 ```json
 {"tool":"clippy","rule":"clippy::indexing_slicing","level":"warning","path":"crates/a/src/lib.rs","line":25,"col":5,"message":"indexing may panic","fingerprint":"clippy::indexing_slicing:crates/a/src/lib.rs:25"}
@@ -193,8 +167,7 @@ mooncake task ci
 - **cargo-audit** — `cargo deny check advisories` covers it.
 - **cargo-udeps** — nightly. `cargo-machete` is stable.
 - **dupl / clone detection** — no credible Rust implementation exists.
-- **arch-snapshot** — Go's package graph has no Rust analogue worth a
-  dependency. Duplicate dep versions, the one signal that carries, is in the
-  soft caps.
+- **A dependency-graph snapshot** — not worth a new tool. The one signal worth
+  having, duplicate dependency versions, is in the soft caps.
 - **structure-ratchet, SARIF** — deferred. `lib.sh` records are already the
   right shape for the ratchet; `clippy-sarif` exists upstream.

@@ -6,8 +6,8 @@
 #     rule<TAB>level<TAB>path<TAB>line<TAB>message
 #
 # gate.sh renders them for humans, findings.sh renders them as JSONL. Nothing
-# in here knows about either format — that is the whole point. The previous
-# layout reimplemented JSON emission in four separate scripts.
+# in here knows about either format — that is the whole point. Define a check
+# once, render it twice.
 #
 # Sourced, never executed directly.
 
@@ -58,10 +58,10 @@ god_files() {
 }
 
 # ── dup_deps ─────────────────────────────────────────────────────────────────
-# Rust-specific and with no Go analogue: two versions of a crate means two
-# copies in the binary, two build scripts running, and a type mismatch the
-# moment either appears in a public signature. Offline — the lockfile is the
-# source of truth and a gate must not reach the network.
+# Two versions of a crate means two copies in the binary, two build scripts
+# running, and a type mismatch the moment either appears in a public signature.
+# Offline — the lockfile is the source of truth and a gate must not reach the
+# network.
 dup_deps() {
   command -v cargo >/dev/null 2>&1 || return 0
   [ -f Cargo.lock ] || return 0

@@ -12,43 +12,43 @@ agent-facing guide, consumed as a mooncake module.
 
 **Ship config, not command wrappers.**
 
-go-quality is one preset per stage because Go's toolchain is eight binaries.
-Rust's is one binary reading config files natively, so the same layout produces
-wrappers with nothing inside them. Measured on v1, which was a direct port:
+Cargo reads `Cargo.toml`, `clippy.toml`, `rustfmt.toml`, `deny.toml` and
+`.cargo/config.toml` natively. Anything built on top of it that merely restates
+a cargo invocation is a file to maintain with nothing inside it. Consequences,
+in order of leverage:
 
-- **17 of 21 presets had exactly one line of payload** — 486 lines of YAML
-  carrying ~40 lines of command.
-- `ai-lint.sh`: **18 lines of rules, 142 lines of scaffolding**.
-- Four scripts each reimplemented the JSONL emitter (8–15 lines apiece).
-- A separate `cargo build --all-targets` step in the full gate was **a wasted
-  full compile** — clippy and the test profile already build everything.
-
-Consequences, in order of leverage:
-
-1. Anything that is one cargo invocation becomes a **cargo alias** shipped in
+1. Anything that is one cargo invocation is a **cargo alias** shipped in
    `.cargo/config.toml`. Works with no mooncake at all.
 2. A preset exists only for multi-step fail-fast ordering, or for copying
    config into a consumer.
 3. JSON lives at **one** edge (`findings.sh`). `gate.sh` renders the same
-   checks for humans from the same functions in `lib.sh`.
-4. Checks clippy already performs are deleted, not duplicated.
+   checks for humans from the same functions in `lib.sh` — define once, render
+   twice.
+4. Checks clippy already performs are not written a second time.
+5. The gate runs no step whose work another step already did: clippy and the
+   test profile both compile everything, so there is no separate build step.
 
-## Evidence for the lint cuts
+## Lints deliberately excluded
 
-Probe crate, clippy 1.96, canonical block applied:
+`restriction` is cherry-picked, and overlapping members are left out so one
+defect produces one finding. Each exclusion was probed against clippy 1.96 with
+the canonical block applied, not assumed:
 
-| Probe | Lints fired | Conclusion |
+| Probe | Lints that fire | Therefore excluded |
 |---|---|---|
-| `*v.get(0).unwrap()` in a `-> Result` fn | `get_first`, `get_unwrap`, `unwrap_used` | `get_unwrap` and `unwrap_in_result` are subsets of `unwrap_used` — cut |
-| `panic!()` in a `-> Result` fn | `panic`, `panic_in_result_fn` | subset of `panic` — cut |
-| `x == 1.0` | `float_cmp` (from pedantic) | `float_cmp_const` redundant — cut |
-| `todo!()`, `unimplemented!()`, `unreachable!()` | `clippy::todo`, `::unimplemented`, `::unreachable` | ai-lint's `stub-macro` rule was pure duplication — cut |
+| `*v.get(0).unwrap()` in a `-> Result` fn | `get_first`, `get_unwrap`, `unwrap_used` | `get_unwrap`, `unwrap_in_result` — subsets of `unwrap_used` |
+| `panic!()` in a `-> Result` fn | `panic`, `panic_in_result_fn` | `panic_in_result_fn` — subset of `panic` |
+| `x == 1.0` | `float_cmp` (pedantic) | `float_cmp_const` |
+| `todo!()`, `unimplemented!()`, `unreachable!()` | `clippy::todo`, `::unimplemented`, `::unreachable` | any grep-based stub rule — clippy owns this |
 
-Also cut as near-inert: `lossy_float_literal`, `unnecessary_safety_comment`,
-`unnecessary_safety_doc`, `tests_outside_test_module`, `unreachable` (legitimate
-in match arms the compiler cannot prove exhaustive).
+Excluded as near-inert: `lossy_float_literal`, `unnecessary_safety_comment`,
+`unnecessary_safety_doc`, `tests_outside_test_module`. Excluded as
+false-positive-prone: `unreachable` — `unreachable!()` is correct in match arms
+the compiler cannot prove exhaustive.
 
-40 clippy entries → 31. Nothing enforced was lost; overlapping reports were.
+`nursery` is off as a group; `cognitive_complexity` is taken individually,
+which makes clippy the single source for complexity: no second tool, no second
+compile.
 
 ## Interfaces
 
@@ -61,7 +61,7 @@ Env: `PKG_ARGS` (`--workspace`), `FEATURE_ARGS` (`--all-features`), `CAP_LOC`
 rule<TAB>level<TAB>path<TAB>line<TAB>message
 ```
 
-Finding schema on the wire, shared with go-quality:
+Finding schema on the wire:
 
 ```json
 {"tool":..,"rule":..,"level":"error|warning|note","path":..,"line":N,"col":N?,
@@ -99,10 +99,11 @@ depends on anything newer, and 1.96 is the safe intersection for lint names).
   in nightly" — the documented trap, reproduced.
 - **Cargo aliases work**: `cargo lint` and `cargo docs` run in a fixture with
   only `.cargo/config.toml` present.
-- **Fast gate green** on a clean fixture; **exits 1** on a dirty one. This is a
-  regression test, not a smoke test: `render` was originally called through a
-  pipe, so its `FAILED=1` was discarded by the subshell and the gate would have
-  exited 0 on error-level findings. Fixed with process substitution.
+- **Fast gate green** on a clean fixture; **exits 1** on a dirty one. Asserted,
+  not assumed — it guards a specific invariant: `render` must never be called
+  through a pipe. A pipeline subshell discards its `FAILED=1`, and the gate
+  would then exit 0 while printing error-level findings. Process substitution
+  keeps it in the caller's shell.
 - **Full gate** steps 1–4 green; step 5 hard-fails with an install hint because
   cargo-deny is absent here.
 - **findings.sh**: 6 findings from all four sources (clippy, rq, lints-check),
@@ -119,7 +120,7 @@ depends on anything newer, and 1.96 is the safe intersection for lint names).
   the documented v2 schema; run `cargo deny check` once after `rq/tools`.
 - **Presets are not machine-validated.** `mooncake validate -c <component>`
   parses a component as a playbook and reports a false `unknown field name` —
-  it does the same to go-quality's shipped components, so this is a mooncake
-  gap (alehatsman/mooncake#54), not a defect here.
+  it does the same to every module's components, so this is a mooncake gap
+  (alehatsman/mooncake#54), not a defect here.
 - **No real consumer yet.** The first will shake out the `FEATURE_ARGS` default
   and the cargo-deny license allow-list.

@@ -10,9 +10,9 @@
 # `scripts/lints-check.sh` (preset `rq/lints-check`) asserts both halves are
 # present and reports drift against this file.
 #
-# Stance, inherited from go-quality: enable the bug-catching groups, disable the
-# style-pedantry members, and cherry-pick from `restriction` — never enable that
-# group wholesale (clippy ships `blanket_clippy_restriction_lints` to say so).
+# Stance: enable the bug-catching groups, disable the style-pedantry members,
+# and cherry-pick from `restriction` — never enable that group wholesale
+# (clippy ships `blanket_clippy_restriction_lints` to say so).
 #
 # `priority = -1` on a group is load-bearing: without it the per-lint `allow`
 # entries below are re-enabled by the group and the allow-list silently does
@@ -78,8 +78,9 @@ mem_forget = "warn"
 
 # Numbers. `float_cmp` comes from pedantic and already covers the const case.
 
-# Complexity soft cap. The one nursery lint we take: it is the clippy-side
-# twin of go-quality's gocyclo ratchet. Threshold lives in clippy.toml.
+# Complexity soft cap. The one nursery lint we take — it makes clippy the
+# single source for complexity, so no second tool and no second compile.
+# Threshold lives in clippy.toml.
 cognitive_complexity = "warn"
 
 # Explicit over magic.
