@@ -138,7 +138,7 @@ no gate step.
 vars: { PKG_ARGS: "--workspace", FEATURE_ARGS: "--all-features" }
 modules:
   rq:
-    source: "alehatsman/rust-quality@v0.1.0"
+    source: "github.com/alehatsman/rust-quality@v0.1.0"
     props:
       pkg_args: "{{ PKG_ARGS }}"      # only exports that declare it receive it
       feature_args: "{{ FEATURE_ARGS }}"
