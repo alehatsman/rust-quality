@@ -37,7 +37,18 @@ case "$FORMAT" in
 esac
 
 CANONICAL="${CANONICAL:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lints.toml}"
-cd "$(git rev-parse --show-toplevel)"
+# Gate the crate the caller is standing in. A consumer whose crates are not one
+# workspace passes each by `dir`, which is a `cd` before this script runs -- and
+# an unconditional jump to the git toplevel undoes it on line one, silently.
+# That is not a theoretical failure: in a repo with no root manifest it made
+# lints-check print "no Cargo.toml at the repo root -- skipped" and exit 0, a
+# green light for a check that ran on nothing.
+#
+# Falling back to the toplevel keeps the convenience this always had: run it
+# from anywhere in a single-crate repo and it finds the manifest.
+if [ ! -f Cargo.toml ]; then
+  cd "$(git rev-parse --show-toplevel)"
+fi
 
 CANONICAL="$CANONICAL" FORMAT="$FORMAT" WARN_ONLY="$WARN_ONLY" python3 - <<'PY'
 import json, os, pathlib, sys, tomllib

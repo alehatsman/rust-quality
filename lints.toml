@@ -99,6 +99,12 @@ allow_attributes_without_reason = "warn" # every override states why
 # print_stdout / print_stderr — a CLI's stdout IS its output. Services should
 #                   turn these on locally and route through `tracing` instead.
 # expect_used     — `.expect("reason")` with a real reason is documentation
-# unsafe_code     — crates that need unsafe set `unsafe_code = "allow"` in their
-#                   own [lints.rust] with a reason; the hygiene lints above then
-#                   carry the weight
+# unsafe_code     — a crate that needs unsafe CANNOT override this in its own
+#                   manifest: under `[lints] workspace = true` cargo refuses
+#                   with "cannot override `workspace.lints` in `lints`", and
+#                   dropping the inherit to get the override back costs the
+#                   crate every other lint here. Do it in the source instead --
+#                   `#![expect(unsafe_code, reason = "...")]` at the crate root,
+#                   or an `#[expect]` per unsafe block, which is better: it
+#                   names each site and rustc tells you when one stops being
+#                   needed. The hygiene lints above then carry the weight.

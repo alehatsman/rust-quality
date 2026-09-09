@@ -1,11 +1,12 @@
-name: rust-quality-tools
 description: >-
   Install the three tools the gate runs (nextest, deny, machete) plus the
   clippy/rustfmt components, then verify.
-version: 2.0.0
 
 steps:
   - name: install
     shell: bash "{{ component_dir }}/scripts/tools.sh" install
+  # The install step changes real state and says nothing about it; `verify`
+  # only asks, so its exit code is its whole contract.
   - name: verify
     shell: bash "{{ component_dir }}/scripts/tools.sh" check
+    changed_when: "false"

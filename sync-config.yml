@@ -1,19 +1,42 @@
-name: rust-quality-sync-config
 description: >-
   Copy the shared config into the consumer repo — clippy.toml, rustfmt.toml,
   deny.toml and .cargo/config.toml — then print the lint block, which cargo
   gives us no way to copy.
-version: 2.0.0
 
+props:
+  dir:
+    type: string
+    default: "."
+    description: >-
+      Directory holding the Cargo.toml to configure, relative to where
+      provision is invoked. A repo whose crates are not one workspace runs
+      this once per crate.
+
+# A `file` step's `src` resolves against the file that names it, so
+# `{{ component_dir }}` is what reaches this checkout's own copies. `path` is
+# not resolved: a relative one is relative to the directory provision was
+# invoked from, which is the consumer repo. That asymmetry is the whole
+# mechanism -- read from here, write over there -- and it is why neither side
+# needs an argument saying where the consumer is.
+#
+# No `force`: `file` compares bytes and reports `ok` when they already match,
+# so re-running this is a no-op that says so. Overwriting unconditionally was
+# `file.copy`'s idea of the same thing.
 steps:
   - name: clippy.toml
-    file.copy: { src: "{{ component_dir }}/clippy.toml", dest: "clippy.toml", force: true }
+    file: { path: "{{ props.dir }}/clippy.toml", state: file, src: "{{ component_dir }}/clippy.toml" }
   - name: rustfmt.toml
-    file.copy: { src: "{{ component_dir }}/rustfmt.toml", dest: "rustfmt.toml", force: true }
+    file: { path: "{{ props.dir }}/rustfmt.toml", state: file, src: "{{ component_dir }}/rustfmt.toml" }
   - name: deny.toml
-    file.copy: { src: "{{ component_dir }}/deny.toml", dest: "deny.toml", force: true }
+    file: { path: "{{ props.dir }}/deny.toml", state: file, src: "{{ component_dir }}/deny.toml" }
+  # `file` writes a file, it does not build the path to it, and a crate that
+  # has never had cargo config has no `.cargo/`. At a repo root the directory
+  # usually already exists, which is why this only showed up once `dir` pointed
+  # the preset at a crate that had never been configured.
+  - name: .cargo
+    file: { path: "{{ props.dir }}/.cargo", state: dir }
   - name: .cargo/config.toml
-    file.copy: { src: "{{ component_dir }}/aliases.toml", dest: ".cargo/config.toml", force: true }
+    file: { path: "{{ props.dir }}/.cargo/config.toml", state: file, src: "{{ component_dir }}/aliases.toml" }
 
   # Cargo has no include mechanism for manifests, so the lint levels are the
   # one thing that cannot be a file copy. Print them; rq/lints-check enforces.
@@ -22,3 +45,4 @@ steps:
       echo "── paste into the WORKSPACE ROOT Cargo.toml, then give every member"
       echo "   crate:  [lints]  /  workspace = true   — rq/lints-check enforces both ──"
       cat "{{ component_dir }}/lints.toml"
+    changed_when: "false"
