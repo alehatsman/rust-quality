@@ -80,6 +80,16 @@ Exports: `ci`, `ci-fast`, `tools`, `sync-config`, `lints-check`, `findings`.
   nothing.
 - nextest never runs doctests; `cargo test --doc` hard-errors with no lib
   target, so `cargo metadata` is consulted first.
+- `grep` exits 1 on no match, which is the normal case for every ai-lint rule.
+  `lib.sh` runs inside a process substitution under `set -euo pipefail`, so
+  every check pipeline ends in `|| true` or the first non-match kills the
+  subshell and every later rule reports clean.
+- `fast` only sees a staged diff, so `full` re-runs ai-lint over tracked files;
+  otherwise `--no-verify`, amend, rebase and merge all bypass the only
+  error-level rules there are.
+- A workspace that does not compile must not read as a clean one: hard rustc
+  errors carry no lint code, so `findings.sh` filters on the primary span and
+  emits cargo's non-zero exit as its own `build-failed` record.
 - A warm `cargo clippy` prints nothing — `findings.sh` runs `cargo clean -p` on
   workspace packages only, keeping deps warm.
 - `imports_granularity` / `group_imports` are nightly-only rustfmt. Kept out.
@@ -106,6 +116,16 @@ depends on anything newer, and 1.96 is the safe intersection for lint names).
   keeps it in the caller's shell.
 - **Full gate** steps 1–4 green; step 5 hard-fails with an install hint because
   cargo-deny is absent here.
+- **`full` catches residue `fast` cannot see.** On a fixture whose agent residue
+  is committed rather than staged, `full` exits 0 without the ai-lint step and 1
+  with it. The dirty-fixture assertion above passed with the ai-lint pipelines
+  unguarded only because that fixture was a single file matching all three
+  rules — no rule ever missed, so nothing ever exited 1. A two-file fixture
+  where each file matches a different rule produces 0 records unguarded and 3
+  guarded, and `god_files` filtering every path likewise ate `dup_deps`.
+- **findings.sh on a non-building workspace** emits the code-less rustc
+  diagnostics plus a `build-failed` record, where it previously wrote an empty
+  file and reported `0 total, 0 error(s)`.
 - **findings.sh**: 6 findings from all four sources (clippy, rq, lints-check),
   every line valid JSON, every line schema-conformant, 6/6 unique fingerprints.
 - **lints-check** verified on four states: clean, missing lint, drifted level,

@@ -58,7 +58,9 @@ cut so one defect produces one finding.
 ai-lint on staged files, soft caps. No extra tools, no network.
 
 `gate.sh full` — pre-push. fmt, clippy, test + doctests, rustdoc, cargo-deny,
-cargo-machete, lint-block drift, soft caps.
+cargo-machete, lint-block drift, ai-lint on tracked files, soft caps. It runs
+ai-lint over everything tracked, not just a staged diff: `--no-verify`, amends,
+rebases and merges all bypass the pre-commit path.
 
 Four things the gate exists to get right, all of which pass silently otherwise:
 

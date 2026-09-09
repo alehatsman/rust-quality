@@ -1,7 +1,8 @@
 name: rust-quality-ci
 description: >-
   Full pre-push gate — fmt, clippy, test + doctests, rustdoc, cargo-deny,
-  cargo-machete, lint-block drift, soft caps. First failure stops the run.
+  cargo-machete, lint-block drift, ai-lint on tracked files, soft caps. First
+  failure stops the run.
 version: 2.0.0
 
 props:

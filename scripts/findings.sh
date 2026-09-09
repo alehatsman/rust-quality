@@ -52,9 +52,15 @@ clippy_findings() {
   done < <(cargo metadata --no-deps --format-version 1 2>/dev/null \
             | python3 -c 'import json,sys;[print(p["name"]) for p in json.load(sys.stdin)["packages"]]' 2>/dev/null || true)
 
+  # Buffered to a file, not piped: the exit status is the only reliable signal
+  # that the workspace failed to build, and a pipeline hides it.
+  local json rc=0
+  json="$(mktemp)" || return 0
   # shellcheck disable=SC2086
-  { cargo clippy --all-targets $PKG_ARGS $FEATURE_ARGS --message-format=json 2>/dev/null || true; } \
-    | python3 -c '
+  cargo clippy --all-targets $PKG_ARGS $FEATURE_ARGS --message-format=json \
+    >"$json" 2>/dev/null || rc=$?
+
+  python3 -c '
 import json, os, sys
 root, seen = os.getcwd(), set()
 for raw in sys.stdin:
@@ -70,9 +76,11 @@ for raw in sys.stdin:
     msg = rec.get("message") or {}
     if msg.get("level") not in ("warning", "error"):
         continue                                   # note/help are children
-    code = (msg.get("code") or {}).get("code")
-    if not code:
-        continue                                   # "N warnings emitted" summaries
+    code = (msg.get("code") or {}).get("code") or "rustc"
+    # The primary-span test, not a missing lint code, is what drops the
+    # "N warnings emitted" summaries — hard rustc errors (parse failures,
+    # "could not compile", linker errors) carry no code either, and filtering
+    # on that dropped every one of them.
     span = next((s for s in msg.get("spans", []) if s.get("is_primary")), None)
     if not span:
         continue
@@ -92,7 +100,16 @@ for raw in sys.stdin:
         "tool": "clippy", "rule": code, "level": msg["level"], "path": path,
         "line": line, "col": span.get("column_start", 1),
         "message": msg.get("message", ""), "fingerprint": fp,
-    }, separators=(",", ":")))'
+    }, separators=(",", ":")))' <"$json"
+  rm -f "$json"
+
+  # A workspace that does not compile must not read as a clean one. Clippy's
+  # JSON can be empty or spanless on a hard failure, so the status gets its own
+  # record — otherwise the consumer sees "0 findings" and concludes the code is
+  # fine when it does not even build.
+  if [ "$rc" -ne 0 ]; then
+    printf '{"tool":"cargo","rule":"build-failed","level":"error","path":"Cargo.toml","line":1,"message":"cargo clippy exited %d — the workspace does not build, so these findings are incomplete","fingerprint":"build-failed:Cargo.toml:1"}\n' "$rc"
+  fi
 }
 
 stream() {

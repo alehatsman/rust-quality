@@ -79,7 +79,7 @@ fast)
 
 # ── full: pre-push. ──────────────────────────────────────────────────────────
 full)
-  TOTAL=8
+  TOTAL=9
   step 1 "cargo fmt --check"
   cargo fmt --all --check || { echo "  ✗ fix with: cargo fmt --all" >&2; exit 1; }
 
@@ -121,7 +121,14 @@ full)
   step 7 "lint block drift"
   bash "$HERE/lints-check.sh"
 
-  step 8 "soft caps"
+  # Over tracked files, not staged: `fast` only ever sees a staged diff, so a
+  # --no-verify commit, an amend, a rebase or a merge walks agent residue
+  # straight past the only rules in here that are errors. Piped per file rather
+  # than collected into an array — no path ever becomes a word.
+  step 8 "ai-lint (tracked)"
+  render "ai-lint" < <(tracked_rs | while IFS= read -r f; do ai_lint "$f"; done)
+
+  step 9 "soft caps"
   render "soft caps" < <(god_files; dup_deps)
   ;;
 
