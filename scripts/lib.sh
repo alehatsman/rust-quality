@@ -21,7 +21,8 @@
 # when a rule does not match, which is the normal case. Callers run this under
 # `set -euo pipefail` inside a process substitution, so an unguarded non-match
 # would kill the subshell and silently skip every later rule and every later
-# file. Same for god_files below.
+# file. Same for god_files and dup_deps below — `grep` there exits 1 on the
+# healthy case, a workspace with no duplicate versions.
 ai_lint() {
   local f
   for f in "$@"; do
@@ -74,7 +75,8 @@ dup_deps() {
   [ -f Cargo.lock ] || return 0
   cargo tree --workspace --duplicates --edges normal --offline 2>/dev/null \
     | grep -E '^[a-zA-Z0-9_.-]+ v[0-9]' | awk '{print $1}' | sort -u \
-    | awk '{ printf "duplicate-dep\twarning\tCargo.lock\t1\t%s resolves to more than one version\n", $1 }'
+    | awk '{ printf "duplicate-dep\twarning\tCargo.lock\t1\t%s resolves to more than one version\n", $1 }' \
+    || true
 }
 
 # ── staged_rs / tracked_rs ───────────────────────────────────────────────────
