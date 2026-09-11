@@ -131,9 +131,12 @@ Four things the gate exists to get right, all of which pass silently otherwise:
 
 ## The lint block is not a file copy
 
-`clippy.toml`, `rustfmt.toml`, `deny.toml` and `.cargo/config.toml` are copied
-in by `rq/sync-config`. The lint levels cannot be: **cargo has no include
-mechanism for manifests**. So `lints.toml` is the canonical text, sync-config
+`clippy.toml`, `rustfmt.toml` and `deny.toml` are copied in by
+`rq/sync-config`, and so is `.cargo/config.toml` — but only when the consumer
+has none. That file is where a repo keeps its own `[build] rustflags`,
+`[target.*] linker` and registry settings, so if it exists the preset leaves it
+alone and prints the aliases to merge by hand. The lint levels cannot be copied
+at all: **cargo has no include mechanism for manifests**. So `lints.toml` is the canonical text, sync-config
 prints it, and `rq/lints-check` enforces it:
 
 ```

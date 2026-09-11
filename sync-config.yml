@@ -22,6 +22,9 @@ props:
 # No `force`: `file` compares bytes and reports `ok` when they already match,
 # so re-running this is a no-op that says so. Overwriting unconditionally was
 # `file.copy`'s idea of the same thing.
+#
+# That reasoning holds for the three files this repo owns. It does not hold for
+# `.cargo/config.toml`, which the consumer owns — see the `creates` gate below.
 steps:
   - name: clippy.toml
     file: { path: "{{ props.dir }}/clippy.toml", state: file, src: "{{ component_dir }}/clippy.toml" }
@@ -35,8 +38,25 @@ steps:
   # the preset at a crate that had never been configured.
   - name: .cargo
     file: { path: "{{ props.dir }}/.cargo", state: dir }
+  # `creates`, unlike the three above: the other files are ours and a consumer
+  # has no reason to hand-edit them, but `.cargo/config.toml` is where a repo
+  # keeps its own `[build] rustflags`, `[target.*] linker`, registry and `[net]`
+  # settings. Writing ours over that is not a sync, it is data loss, and the
+  # aliases are not worth it. Absent, we install it; present, it is the
+  # consumer's file and the next step prints what to add.
   - name: .cargo/config.toml
     file: { path: "{{ props.dir }}/.cargo/config.toml", state: file, src: "{{ component_dir }}/aliases.toml" }
+    creates: "{{ props.dir }}/.cargo/config.toml"
+
+  # The mirror of the step above: `unless` exits 0 — "already done", skip —
+  # exactly when there is no file of the consumer's to merge into.
+  - name: aliases for an existing .cargo/config.toml
+    shell: |
+      echo "── {{ props.dir }}/.cargo/config.toml already exists and was left alone."
+      echo "   Merge these in by hand; rq/ci does not depend on them ──"
+      cat "{{ component_dir }}/aliases.toml"
+    unless: test ! -f "{{ props.dir }}/.cargo/config.toml"
+    changed_when: "false"
 
   # Cargo has no include mechanism for manifests, so the lint levels are the
   # one thing that cannot be a file copy. Print them; rq/lints-check enforces.
