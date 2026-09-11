@@ -57,11 +57,21 @@ _rec() {
 # enforced by the lint gate with no second compile and no extra tool.
 god_files() {
   local cap="${CAP_LOC:-500}"
-  git ls-files -- '*.rs' \
+  # `-c core.quotePath=` keeps a non-ASCII path as its own bytes instead of
+  # C-quoting it into "cr\303\251ate.rs", which names no file on disk.
+  #
+  # awk takes the path as everything after the count, not as $2: `wc -l` pads
+  # the count and then prints the name verbatim, so a path containing a space
+  # reported as $2 is truncated at that space. `xargs` splits a large repo into
+  # batches and each batch ends in a `total` line; no `*.rs` path can be the
+  # bare word `total`, so dropping it by name is exact.
+  git -c core.quotePath= ls-files -- '*.rs' \
     | grep -vE '(^|/)(target|vendor)/|(^|/)(tests|benches|examples)/|\.pb\.rs$|_generated\.rs$' \
     | tr '\n' '\0' | xargs -0 wc -l 2>/dev/null \
-    | awk -v cap="$cap" '$1 > cap && $2 != "total" {
-        printf "god-file\twarning\t%s\t1\t%d LOC over the %d cap\n", $2, $1, cap }' \
+    | awk -v cap="$cap" '{
+        path = $0; sub(/^[[:space:]]*[0-9]+[[:space:]]+/, "", path)
+        if ($1 > cap && path != "total")
+          printf "god-file\twarning\t%s\t1\t%d LOC over the %d cap\n", path, $1, cap }' \
     || true
 }
 
