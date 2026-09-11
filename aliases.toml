@@ -10,7 +10,9 @@
 [alias]
 lint = "clippy --locked --all-targets --all-features -- -D warnings"
 # nextest never runs doctests. Two aliases rather than one that quietly skips.
-t = "nextest run --locked --workspace --all-features"
+# `--no-tests=warn` because nextest defaults to `fail`, and a crate whose only
+# tests are doctests would otherwise have `cargo t` fail on every run.
+t = "nextest run --no-tests=warn --locked --workspace --all-features"
 doctest = "test --locked --doc --workspace --all-features"
 docs = "doc --locked --no-deps --workspace --all-features"
 

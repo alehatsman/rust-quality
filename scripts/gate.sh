@@ -105,8 +105,14 @@ full)
 
   step 3 "test"
   if have cargo-nextest; then
+    # `--no-tests=warn`: since nextest 0.9.85 the default is `fail`, so a
+    # workspace that has not written its first test yet — or one whose only
+    # tests are doctests, which nextest never collects — fails this step with
+    # "error: no tests to run" and no remedy that is not "write a test".
+    # That is a real signal but it is not this step's job; the step asks
+    # whether the tests pass, and vacuously they do.
     # shellcheck disable=SC2086
-    cargo nextest run --locked $PKG_ARGS $FEATURE_ARGS
+    cargo nextest run --no-tests=warn --locked $PKG_ARGS $FEATURE_ARGS
     if cargo metadata --no-deps --format-version 1 2>/dev/null \
         | grep -q '"kind":\["lib"\]'; then
       echo "  doctests (nextest does not run them)"

@@ -247,6 +247,7 @@ Each of these has cost somebody a day.
 | `[workspace.lints]` alone | Does nothing until every member declares `[lints] workspace = true`. |
 | `cargo clippy` on a warm cache | Emits nothing. A "clean" CI step can mean "did not run". |
 | `cargo nextest run` | Runs no doctests. Ever. |
+| `cargo nextest run` with no tests | Exits 1 (`--no-tests` defaults to `fail` since 0.9.85). A new crate, or one whose only tests are doctests, fails the run. Pass `--no-tests=warn`. |
 | `cargo test --doc` on a bin-only workspace | Hard error, not a skip. |
 | `--all-features` | Cannot build crates with mutually exclusive features. |
 | `async fn` in a trait behind `dyn` | Not dyn-compatible in 1.98. `async-trait` or an enum. |
