@@ -136,8 +136,8 @@ Four things the gate exists to get right, all of which pass silently otherwise:
 has none. That file is where a repo keeps its own `[build] rustflags`,
 `[target.*] linker` and registry settings, so if it exists the preset leaves it
 alone and prints the aliases to merge by hand. The lint levels cannot be copied
-at all: **cargo has no include mechanism for manifests**. So `lints.toml` is the canonical text, sync-config
-prints it, and `rq/lints-check` enforces it:
+at all: **cargo has no include mechanism for manifests**. So `lints.toml` is the
+canonical text, sync-config prints it, and `rq/lints-check` enforces it:
 
 ```
 lint-missing    canonical lint absent from the consumer manifest

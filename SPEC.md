@@ -1,12 +1,12 @@
 # rust-quality — SPEC
 
-v2, 2026-09-08. Decisions and evidence. The README describes what exists; this
+v3, 2026-09-11. Decisions and evidence. The README describes what exists; this
 records why, and what was measured to justify it.
 
 ## Goal
 
 One canonical source for Rust lint policy, the quality gate, and the
-agent-facing guide, consumed as a mooncake module.
+agent-facing guide, consumed as a provision component set.
 
 ## The governing decision
 
@@ -18,7 +18,7 @@ a cargo invocation is a file to maintain with nothing inside it. Consequences,
 in order of leverage:
 
 1. Anything that is one cargo invocation is a **cargo alias** shipped in
-   `.cargo/config.toml`. Works with no mooncake at all.
+   `.cargo/config.toml`. Works with no provision at all.
 2. A preset exists only for multi-step fail-fast ordering, or for copying
    config into a consumer.
 3. JSON lives at **one** edge (`findings.sh`). `gate.sh` renders the same
@@ -96,10 +96,10 @@ Exports: `ci`, `ci-fast`, `tools`, `sync-config`, `lints-check`, `findings`.
 - No git repo, no staged files, no lockfile → clean skip or a specific remedy,
   never a stack trace.
 
-## Validation — actually run, 2026-09-08
+## Validation — actually run, 2026-09-11
 
-Toolchain: cargo/clippy/rustfmt **1.96.0** (latest stable 1.98.1; nothing here
-depends on anything newer, and 1.96 is the safe intersection for lint names).
+Toolchain: cargo/clippy/rustfmt **1.98.1**, cargo-deny, cargo-nextest and
+cargo-machete all present. Every claim below is a run, not a reading.
 
 - `shellcheck -x` + `bash -n` clean on all 5 scripts.
 - **lints.toml parsed by real clippy — no `unknown lint`.** Negative control:
@@ -114,8 +114,24 @@ depends on anything newer, and 1.96 is the safe intersection for lint names).
   through a pipe. A pipeline subshell discards its `FAILED=1`, and the gate
   would then exit 0 while printing error-level findings. Process substitution
   keeps it in the caller's shell.
-- **Full gate** steps 1–4 green; step 5 hard-fails with an install hint because
-  cargo-deny is absent here.
+- **Full gate** green end to end, all 9 steps, cargo-deny included.
+- **`deny.toml` validated against real cargo-deny.** A two-crate private
+  workspace was `licenses FAILED` on `error[unlicensed]` before
+  `private.ignore`; the fleet allow-list also emitted one
+  `license-not-encountered` per unmet entry — 5 on the provision repo, now 0.
+- **nextest exits 1 on a workspace with no tests** (`--no-tests` defaults to
+  `fail` since 0.9.85). A zero-test lib crate stopped the full gate at step 3;
+  with `--no-tests=warn` it reaches step 4.
+- **`god_files` loses paths.** A path with a space was truncated at the space
+  and a non-ASCII path was C-quoted into a name `wc` cannot open, so it was
+  skipped entirely. Both now report paths that resolve on disk.
+- **`lints-check` could not see implicit members.** A crate reached only as a
+  path dependency is a real member per `cargo metadata`, inherits nothing, and
+  the `members` glob reported the workspace clean. Asking cargo catches it; the
+  glob fallback announces itself.
+- **`sync-config` destroyed a consumer's `.cargo/config.toml`.** `[build]
+  rustflags` was replaced by four aliases. `creates` gates the write; verified
+  with `provision apply` on both an absent and a present file.
 - **`full` catches residue `fast` cannot see.** On a fixture whose agent residue
   is committed rather than staged, `full` exits 0 without the ai-lint step and 1
   with it. The dirty-fixture assertion above passed with the ai-lint pipelines
@@ -132,15 +148,27 @@ depends on anything newer, and 1.96 is the safe intersection for lint names).
   member not opted in.
 - **Missing vs stale lockfile** produce different, correct remedies — found by
   running the gate, not by reading it.
-- 7 preset YAML files parse; every export resolves; no orphans.
+- **Five of six components pass `provision validate --strict`.** `tools.yml`
+  does not, and should not: `--strict` demands an idempotency gate on every
+  `shell` step, and the install step cannot honestly claim one — it changes real
+  state and cannot say in advance whether it will. A consumer that wants the
+  step gated adds its own `creates:` at the `use` site, which is what the
+  provision repo does; a `use` site cannot reach inside to remove one.
+- **Both new lints measured against the one real consumer before landing**:
+  `exit` and `infinite_loop` are 0 hits on the provision repo.
 
 ## Known gaps
 
-- **`deny.toml` is unvalidated.** cargo-deny is not installed here. Written to
-  the documented v2 schema; run `cargo deny check` once after `rq/tools`.
-- **Presets are not machine-validated.** `mooncake validate -c <component>`
-  parses a component as a playbook and reports a false `unknown field name` —
-  it does the same to every module's components, so this is a mooncake gap
-  (alehatsman/mooncake#54), not a defect here.
-- **No real consumer yet.** The first will shake out the `FEATURE_ARGS` default
-  and the cargo-deny license allow-list.
+- **The toolchain floor is a claim, not a measurement.** The block is validated
+  on 1.98.1; the oldest clippy that accepts every lint in it has not been
+  established, because that needs old toolchains installed. An unknown lint is
+  `error[E0602]` and `lints-check` cannot see it coming.
+- **Two lints deferred with a price attached.** `unused_trait_names` is 39 hits
+  on the provision repo and `mod_module_files` is 4 file renames. Both enforce
+  rules docs/RUST.md already states; both are a consumer refactor, not a config
+  line.
+- **`scripts/lints-check.sh` needs python3 ≥ 3.11** for `tomllib`, and says so
+  only by traceback.
+- **Outside a git repo the scripts exit 1 on `cd ""`**, after a bare `git
+  fatal:` and a bash `cd: null directory`. Correct exit code, wrong message —
+  the edge-case list above promises a remedy, not this.

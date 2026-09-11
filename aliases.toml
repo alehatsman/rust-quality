@@ -2,7 +2,7 @@
 #
 # Cargo has a first-class mechanism for named commands, so the everyday ones
 # live here rather than in a task runner: they work in a terminal, in CI, and in
-# an editor, with no mooncake, no module fetch and no YAML.
+# an editor, with no provision, no checkout and no YAML.
 #
 # Presets are reserved for what an alias cannot do: multi-step gates with
 # fail-fast ordering, and copying config into a consumer repo.

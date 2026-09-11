@@ -1,7 +1,7 @@
 description: >-
-  Copy the shared config into the consumer repo — clippy.toml, rustfmt.toml,
-  deny.toml and .cargo/config.toml — then print the lint block, which cargo
-  gives us no way to copy.
+  Copy the shared config into the consumer repo — clippy.toml, rustfmt.toml and
+  deny.toml, plus .cargo/config.toml when the consumer has none — then print the
+  lint block, which cargo gives us no way to copy.
 
 props:
   dir:

@@ -247,11 +247,11 @@ Each of these has cost somebody a day.
 | `[workspace.lints]` alone | Does nothing until every member declares `[lints] workspace = true`. |
 | `cargo clippy` on a warm cache | Emits nothing. A "clean" CI step can mean "did not run". |
 | `cargo nextest run` | Runs no doctests. Ever. |
-| `cargo nextest run` with no tests | Exits 1 (`--no-tests` defaults to `fail` since 0.9.85). A new crate, or one whose only tests are doctests, fails the run. Pass `--no-tests=warn`. |
+| `cargo nextest run` with no tests | Exits 1 — `--no-tests` defaults to `fail` since 0.9.85. A crate whose only tests are doctests fails too. Pass `--no-tests=warn`. |
 | `cargo test --doc` on a bin-only workspace | Hard error, not a skip. |
 | `--all-features` | Cannot build crates with mutually exclusive features. |
 | `async fn` in a trait behind `dyn` | Not dyn-compatible in 1.98. `async-trait` or an enum. |
-| `cargo deny check licenses` on an internal crate | `error[unlicensed]` unless the crate says `publish = false`. `[licenses] private.ignore` keys on publishability, not on being a path member. |
+| `cargo deny check licenses`, internal crate | `error[unlicensed]` unless it says `publish = false`. `private.ignore` keys on publishability, not on being a path member. |
 | `cargo machete` | False-positives on deps used only in `build.rs` or through a macro. Add an `ignored` entry, do not delete the dep. |
 | `sqlx` compile-time checks | Need a live database unless `.sqlx/` offline data is committed. |
 | `std::env::set_var` | `unsafe` in edition 2024. It always was; now it says so. |
