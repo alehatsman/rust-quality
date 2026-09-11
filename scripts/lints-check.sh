@@ -84,11 +84,17 @@ def line_of(key):
     return 1
 
 findings = []
-def add(rule, path, line, message):
+def add(rule, path, line, message, key=None):
+    # `rule:path:line` alone is not unique here. A lint that is missing has no
+    # line to point at, so `line_of` falls back to 1 and every `lint-missing`
+    # in a run collides on `lint-missing:Cargo.toml:1` — dedup would keep one
+    # and silently drop the rest. `key` is the lint name, which is what
+    # actually distinguishes them and is stable across runs.
+    fp = f"{rule}:{path}:{line}" + (f":{key}" if key else "")
     findings.append({
         "tool": "lints-check", "rule": rule, "level": "error",
         "path": path, "line": line, "message": message,
-        "fingerprint": f"{rule}:{path}:{line}",
+        "fingerprint": fp,
     })
 
 for group, entries in want.items():
@@ -96,11 +102,13 @@ for group, entries in want.items():
     for lint, level in entries.items():
         if lint not in got_group:
             add("lint-missing", "Cargo.toml", line_of(lint),
-                f"[{scope}.{group}] is missing `{lint} = {json.dumps(level)}`")
+                f"[{scope}.{group}] is missing `{lint} = {json.dumps(level)}`",
+                key=f"{group}.{lint}")
         elif got_group[lint] != level:
             add("lint-drift", "Cargo.toml", line_of(lint),
                 f"[{scope}.{group}] {lint}: expected {json.dumps(level)}, "
-                f"found {json.dumps(got_group[lint])}")
+                f"found {json.dumps(got_group[lint])}",
+                key=f"{group}.{lint}")
 
 # Every member of a workspace must opt in, or the block above applies to
 # nothing.

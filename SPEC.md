@@ -61,11 +61,14 @@ Env: `PKG_ARGS` (`--workspace`), `FEATURE_ARGS` (`--all-features`), `CAP_LOC`
 rule<TAB>level<TAB>path<TAB>line<TAB>message
 ```
 
-Finding schema on the wire:
+Finding schema on the wire. `fingerprint` carries a trailing `key` only where
+one location can hold more than one finding of the same rule — a missing lint
+has no line to point at, so every `lint-missing` in a run would otherwise
+collide on `:1` and dedup would keep exactly one of them:
 
 ```json
 {"tool":..,"rule":..,"level":"error|warning|note","path":..,"line":N,"col":N?,
- "message":..,"fingerprint":"rule:path:line"}
+ "message":..,"fingerprint":"rule:path:line[:key]"}
 ```
 
 Exports: `ci`, `ci-fast`, `tools`, `sync-config`, `lints-check`, `findings`.
