@@ -51,7 +51,7 @@ if [ ! -f Cargo.toml ]; then
 fi
 
 CANONICAL="$CANONICAL" FORMAT="$FORMAT" WARN_ONLY="$WARN_ONLY" python3 - <<'PY'
-import json, os, pathlib, sys, tomllib
+import json, os, pathlib, subprocess, sys, tomllib
 
 canonical = pathlib.Path(os.environ["CANONICAL"])
 fmt = os.environ["FORMAT"]
@@ -103,18 +103,42 @@ for group, entries in want.items():
                 f"found {json.dumps(got_group[lint])}")
 
 # Every member of a workspace must opt in, or the block above applies to
-# nothing. Globs in `members` are resolved the way cargo resolves them.
-members = have_doc.get("workspace", {}).get("members", [])
+# nothing.
+#
+# Ask cargo for the member list rather than globbing `workspace.members`.
+# A glob answers a different question: cargo also makes every path dependency
+# of a member an implicit member, honours `workspace.exclude`, and counts the
+# root package itself. A crate reached only as a path dependency is a real
+# member, inherits nothing, and a glob reports the workspace clean.
+def cargo_members():
+    out = subprocess.run(
+        ["cargo", "metadata", "--no-deps", "--format-version", "1", "--offline"],
+        capture_output=True, text=True)
+    if out.returncode != 0:
+        return None
+    return [pathlib.Path(pkg["manifest_path"]) for pkg in json.loads(out.stdout)["packages"]]
+
 seen = set()
-for pattern in members:
-    for d in sorted(root.glob(pattern)):
-        m = d / "Cargo.toml"
+if have_doc.get("workspace") is not None:
+    manifests = cargo_members()
+    if manifests is None:
+        # Degraded, and it says so: a silent fall back to the weaker check is
+        # the failure mode this whole script exists to catch.
+        say("  ! lints-check: `cargo metadata` failed — falling back to the "
+            "`members` glob, which cannot see implicit members.")
+        manifests = [d / "Cargo.toml" for pat in have_doc["workspace"].get("members", [])
+                     for d in sorted(root.glob(pat))]
+    for m in sorted(manifests):
         if not m.is_file() or m in seen:
             continue
         seen.add(m)
+        try:
+            rel = m.relative_to(root.resolve())
+        except ValueError:
+            rel = m
         doc = tomllib.loads(m.read_text())
         if doc.get("lints", {}).get("workspace") is not True:
-            add("lints-opt-out", str(m), 1,
+            add("lints-opt-out", str(rel), 1,
                 "member does not inherit workspace lints — add `[lints]\\nworkspace = true`")
 
 if fmt == "jsonl":
