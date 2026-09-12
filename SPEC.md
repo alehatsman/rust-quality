@@ -53,7 +53,15 @@ compile.
 ## Interfaces
 
 Env: `PKG_ARGS` (`--workspace`), `FEATURE_ARGS` (`--all-features`), `CAP_LOC`
-(`500`).
+(`500`), `RQ_PYTHON` (unset — names the interpreter `lints-check` should use,
+skipping the probe).
+
+**Interpreter floor: bash 3.2, and a python found by capability.** The scripts
+run under macOS's `/bin/bash` 3.2 — no `mapfile`, no associative arrays, no
+namerefs — because the manifests invoke them as a bare `bash` and the shebang
+never gets a say. `lints-check` needs a TOML parser and asks each candidate
+whether it has one rather than trusting the name `python3`; `tomllib` (3.11+)
+and the `tomli` backport are both accepted.
 
 `lib.sh` records — the internal contract, format-free:
 
@@ -98,6 +106,41 @@ Exports: `ci`, `ci-fast`, `tools`, `sync-config`, `lints-check`, `findings`.
 - `imports_granularity` / `group_imports` are nightly-only rustfmt. Kept out.
 - No git repo, no staged files, no lockfile → clean skip or a specific remedy,
   never a stack trace.
+- **`python3` on PATH is not the python you want.** macOS ships 3.9 at
+  `/usr/bin/python3`, and `/usr/libexec/path_helper` — run from `/etc/zprofile`
+  on every login shell — rebuilds PATH with `/etc/paths` ahead of everything,
+  so `/usr/bin` outranks Homebrew whatever order it inherits. Seeding it with
+  `/opt/homebrew/bin:/usr/bin` hands back `/usr/bin` first, and
+  `/etc/paths.d/homebrew` cannot beat it either. `py_toml` therefore probes for
+  the capability and falls back to absolute prefixes for a PATH stripped past
+  the point where any name resolves. No parser anywhere → one actionable
+  message and exit 2, never a `ModuleNotFoundError`.
+- **A `lints-check` that could not run must not read as one that found
+  nothing.** `findings.sh` never aborts, so it turns exit 2 into a
+  `no-toml-parser` record — same reasoning as `build-failed`.
+
+## Validation — actually run, 2026-09-12
+
+Portability pass, on macOS 15 aarch64. Every run below used `/bin/bash` 3.2.57
+explicitly and `env -i` with a PATH holding no Homebrew entry, which is what a
+non-interactive shell on this fleet's Macs actually gets.
+
+- **`bash -n` clean on all 5 scripts under bash 3.2**, and `shellcheck -x`
+  clean. `mapfile` is a builtin rather than syntax, so `bash -n` never caught
+  it — only a run did.
+- **`gate.sh fast` green, all 5 steps**, step 4 included. It previously died at
+  step 4 on `mapfile: command not found`.
+- **`findings.sh` green**, 6 findings, valid JSONL. Second `mapfile` site.
+- **The read loop that replaced `mapfile` keeps what `mapfile -t` kept**: a
+  path with a space and a non-ASCII path both survive intact; blank lines drop.
+- **`lints-check.sh` green with python 3.9 first on PATH** — the probe rejected
+  `/usr/bin/python3` (3.9.6) and selected `/opt/homebrew/bin/python3` (3.14.7)
+  by absolute path, with no Homebrew entry on PATH at all.
+- **The `tomli` backport path runs end to end** on an interpreter that
+  genuinely has no `tomllib`: 3.9.6 with `tomli` resolvable, real parse, exit 0.
+- **Negative control** — every candidate removed so the probe cannot be
+  satisfied: 4 lines naming the floor and the `RQ_PYTHON` escape hatch, exit 2.
+  No traceback.
 
 ## Validation — actually run, 2026-09-11
 
@@ -170,8 +213,11 @@ cargo-machete all present. Every claim below is a run, not a reading.
   on the provision repo and `mod_module_files` is 4 file renames. Both enforce
   rules docs/RUST.md already states; both are a consumer refactor, not a config
   line.
-- **`scripts/lints-check.sh` needs python3 ≥ 3.11** for `tomllib`, and says so
-  only by traceback.
+- ~~**`scripts/lints-check.sh` needs python3 ≥ 3.11** for `tomllib`, and says so
+  only by traceback.~~ **Closed 2026-09-12.** It still needs a TOML parser —
+  that part was never the gap. The gap was trusting the name `python3` to be
+  one, on the one platform where it reliably is not, and then reporting it as a
+  traceback. It now probes by capability and says what to install.
 - **Outside a git repo the scripts exit 1 on `cd ""`**, after a bare `git
   fatal:` and a bash `cd: null directory`. Correct exit code, wrong message —
   the edge-case list above promises a remedy, not this.

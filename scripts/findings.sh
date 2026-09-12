@@ -129,11 +129,25 @@ for raw in sys.stdin:
 }
 
 stream() {
-  local files=()
-  mapfile -t files < <(tracked_rs)   # mapfile, not $(..): paths may contain spaces
+  local files=() rc=0 f
+  # A read loop, not `mapfile`: mapfile is a bash 4 builtin and macOS ships
+  # bash 3.2 as /bin/bash, which is what a bare `bash findings.sh` from the
+  # manifests resolves to. Keeps the property the old comment claimed -- one
+  # path per line, spaces intact -- without the version floor.
+  while IFS= read -r f; do
+    [ -n "$f" ] && files+=("$f")
+  done < <(tracked_rs)
   clippy_findings
   emit < <(ai_lint "${files[@]+"${files[@]}"}"; god_files; dup_deps)
-  bash "$HERE/lints-check.sh" --format jsonl --warn-only 2>/dev/null || true
+
+  # Still never aborts -- but a lints-check that could not run must not read as
+  # a lints-check that found nothing. Same reasoning as the build-failed record
+  # above: silence and clean are different answers, and only one of them is
+  # honest. Exit 2 is the no-TOML-parser case (see lints-check.sh).
+  bash "$HERE/lints-check.sh" --format jsonl --warn-only 2>/dev/null || rc=$?
+  if [ "$rc" -eq 2 ]; then
+    printf '%s\n' '{"tool":"lints-check","rule":"no-toml-parser","level":"warning","path":"Cargo.toml","line":1,"message":"lints-check skipped: no python with TOML support (needs >=3.11 or tomli); set RQ_PYTHON","fingerprint":"no-toml-parser:Cargo.toml:1"}'
+  fi
 }
 
 if [ -n "$OUT" ]; then

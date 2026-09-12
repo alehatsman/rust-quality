@@ -84,7 +84,15 @@ fast)
   cargo clippy --locked --all-targets $PKG_ARGS $FEATURE_ARGS -- -D warnings
 
   step 4 "ai-lint (staged)"
-  mapfile -t files < <(staged_rs)
+  # A read loop, not `mapfile`: mapfile is a bash 4 builtin and macOS ships
+  # bash 3.2 as /bin/bash. The manifests invoke this script as a bare `bash`,
+  # so the shebang never gets a say and a Mac ran step 4 straight into
+  # `mapfile: command not found`. Same line-per-path, same tolerance of spaces
+  # in a path, four more lines and no version floor.
+  files=()
+  while IFS= read -r f; do
+    [ -n "$f" ] && files+=("$f")
+  done < <(staged_rs)
   if [ "${#files[@]}" -eq 0 ]; then echo "  (no staged .rs files)"; else
     render "ai-lint" < <(ai_lint "${files[@]}")
   fi

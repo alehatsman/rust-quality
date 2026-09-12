@@ -36,7 +36,24 @@ case "$FORMAT" in
   *) echo "lints-check: unknown --format '$FORMAT' (want text|jsonl)" >&2; exit 2 ;;
 esac
 
-CANONICAL="${CANONICAL:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lints.toml}"
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source-path=SCRIPTDIR
+. "$HERE/lib.sh"
+
+CANONICAL="${CANONICAL:-$(dirname "$HERE")/lints.toml}"
+
+# The only script in the set that needs a TOML parser, so the only one that
+# probes -- see py_toml in lib.sh for why a bare `python3` is not enough. The
+# others use python3 for `json`, which every python3 back to 3.6 has; routing
+# them through this probe would fail boxes that work today.
+PY="$(py_toml)" || {
+  echo "lints-check: no python with TOML support found." >&2
+  echo "  Needs python3 >= 3.11 (stdlib tomllib) or the 'tomli' backport." >&2
+  echo "  Tried: python3 python3.14 python3.13 python3.12 python3.11 python" >&2
+  echo "  Install one, or name it: RQ_PYTHON=/opt/homebrew/bin/python3" >&2
+  exit 2
+}
+
 # Gate the crate the caller is standing in. A consumer whose crates are not one
 # workspace passes each by `dir`, which is a `cd` before this script runs -- and
 # an unconditional jump to the git toplevel undoes it on line one, silently.
@@ -50,8 +67,16 @@ if [ ! -f Cargo.toml ]; then
   cd "$(git rev-parse --show-toplevel)"
 fi
 
-CANONICAL="$CANONICAL" FORMAT="$FORMAT" WARN_ONLY="$WARN_ONLY" python3 - <<'PY'
-import json, os, pathlib, subprocess, sys, tomllib
+CANONICAL="$CANONICAL" FORMAT="$FORMAT" WARN_ONLY="$WARN_ONLY" "$PY" - <<'PY'
+import json, os, pathlib, subprocess, sys
+
+# py_toml accepts either, so accept either here. Same name after the import,
+# because tomli IS tomllib -- it is the backport the stdlib module was taken
+# from, and the two APIs this script uses are identical.
+try:
+    import tomllib
+except ModuleNotFoundError:
+    import tomli as tomllib
 
 canonical = pathlib.Path(os.environ["CANONICAL"])
 fmt = os.environ["FORMAT"]

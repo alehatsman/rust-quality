@@ -92,3 +92,41 @@ dup_deps() {
 # ── staged_rs / tracked_rs ───────────────────────────────────────────────────
 staged_rs()  { git diff --cached --name-only --diff-filter=ACMR -- '*.rs' 2>/dev/null; }
 tracked_rs() { git ls-files -- '*.rs' 2>/dev/null; }
+
+# ── py_toml ──────────────────────────────────────────────────────────────────
+# Print the first python on this box that can actually parse TOML, or fail.
+#
+# A bare `python3` is a PATH lookup, and on macOS that lookup is rigged against
+# us: `tomllib` is stdlib only from 3.11, /usr/bin/python3 is 3.9, and
+# /usr/libexec/path_helper — run from /etc/zprofile on every login shell —
+# rebuilds PATH with /etc/paths ahead of everything, so /usr/bin always
+# outranks Homebrew no matter what order was inherited. Seed it with
+# `/opt/homebrew/bin:/usr/bin` and it hands back /usr/bin first. The result was
+# a gate that failed on the one interpreter in the fleet that cannot do the
+# job, on a machine with 3.14 installed two directories away, and said so only
+# by ModuleNotFoundError traceback.
+#
+# So: probe by capability, never by name. `python3` is tried first so a box
+# that has already put the right one on PATH — Arch, Ubuntu 24.04 — pays
+# nothing and the fleet stays uniform. `tomli` is the pre-3.11 backport and is
+# accepted; the callers import it under the same name.
+#
+# The absolute candidates at the tail are for a PATH stripped down past the
+# point where any of the names resolve -- a systemd unit, a launchd job, a
+# container with the bare defaults. They cost one failed stat each on a box
+# that never needs them.
+py_toml() {
+  local c
+  for c in "${RQ_PYTHON:-}" python3 python3.14 python3.13 python3.12 python3.11 python \
+           /opt/homebrew/bin/python3 /usr/local/bin/python3 \
+           /home/linuxbrew/.linuxbrew/bin/python3; do
+    [ -n "$c" ] || continue
+    command -v "$c" >/dev/null 2>&1 || continue
+    if "$c" -c 'import tomllib' >/dev/null 2>&1 \
+    || "$c" -c 'import tomli'   >/dev/null 2>&1; then
+      printf '%s\n' "$c"
+      return 0
+    fi
+  done
+  return 1
+}
