@@ -181,6 +181,12 @@ already get right.
   cannot see that without lexing Rust, so the rules accept it — the cost is a
   warning on a file embedding commented source as data, which is also a file
   worth looking at.
+- **A gate run during an unresolved merge saw every conflicted file three
+  times.** `git ls-files` reports a conflicted path once per merge stage, so
+  `god_files` and every per-file rule fired three times on one file and the
+  report read as three findings. `--deduplicate` (git ≥ 2.31) is the fix, and
+  the state is not exotic: running the gate before committing a merge
+  resolution is exactly when you want it.
 - `grep` exits 1 on no match, which is the normal case for every ai-lint rule.
   `lib.sh` runs inside a process substitution under `set -euo pipefail`, so
   every check pipeline ends in `|| true` or the first non-match kills the

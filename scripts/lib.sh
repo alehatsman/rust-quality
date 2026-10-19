@@ -163,12 +163,15 @@ god_files() {
   # note about paths with spaces: awk is handed each name by xargs and never
   # has to parse one back out of a padded line.
   #
+  # `--deduplicate`: a conflicted path is listed once per merge stage, so
+  # without it a gate run mid-merge reports the same file three times.
+  #
   # The single-quoted payload below is an awk program. shellcheck only
   # recognises one when `awk` is the command itself, not when it is an
   # argument to xargs, so it reads `$0` as a shell expansion that failed to
   # expand. It is not one.
   # shellcheck disable=SC2016
-  git -c core.quotePath= ls-files -- '*.rs' \
+  git -c core.quotePath= ls-files --deduplicate -- '*.rs' \
     | grep -vE '(^|/)(target|vendor)/|(^|/)(tests|benches|examples)/|\.pb\.rs$|_generated\.rs$' \
     | tr '\n' '\0' | xargs -0 awk -v cap="$cap" '
         function emit() {
@@ -236,7 +239,11 @@ alias_drift() {
 
 # ── staged_rs / tracked_rs ───────────────────────────────────────────────────
 staged_rs()  { git diff --cached --name-only --diff-filter=ACMR -- '*.rs' 2>/dev/null; }
-tracked_rs() { git ls-files -- '*.rs' 2>/dev/null; }
+# `--deduplicate`, because an unresolved merge is not a rare state for a gate
+# to be run in. `git ls-files` reports a conflicted path once per stage, so
+# during a conflict every rule here fires three times on the same file and the
+# report reads as three findings. Found by running the gate mid-merge.
+tracked_rs() { git ls-files --deduplicate -- '*.rs' 2>/dev/null; }
 
 # ── py_toml ──────────────────────────────────────────────────────────────────
 # Print the first python on this box that can actually parse TOML, or fail.
