@@ -53,8 +53,8 @@ compile.
 ## Interfaces
 
 Env: `PKG_ARGS` (`--workspace`), `FEATURE_ARGS` (`--all-features`), `CAP_LOC`
-(`500`), `RQ_PYTHON` (unset — names the interpreter `lints-check` should use,
-skipping the probe).
+(`500`), `CAP_COMMENT_RUN` (`15`), `CAP_COMMENT_RATIO` (`40`), `RQ_PYTHON`
+(unset — names the interpreter `lints-check` should use, skipping the probe).
 
 **Interpreter floor: bash 3.2, and a python found by capability.** The scripts
 run under macOS's `/bin/bash` 3.2 — no `mapfile`, no associative arrays, no
@@ -81,6 +81,87 @@ collide on `:1` and dedup would keep exactly one of them:
 
 Exports: `ci`, `ci-fast`, `tools`, `sync-config`, `lints-check`, `findings`.
 
+## The comment budget
+
+`missing_docs` and `rustdoc -D warnings` push doc comments up. Nothing pushed
+non-doc `//` down, and the asymmetry shows: an agent that cannot delete is
+rewarded for narrating, and the narration accretes where no lint looks. clippy
+has no comment-volume opinion and there is no credible Rust tool for one, so
+this is the second thing `lib.sh` owns outright — three rules, one awk pass per
+file, no new tool and no second compile.
+
+| Rule | Level | Fires on |
+|---|---|---|
+| `commented-out-code` | error | a non-doc `//` line that is Rust, not prose |
+| `comment-block` | warning | a run of `CAP_COMMENT_RUN` consecutive non-doc `//` lines |
+| `comment-ratio` | warning | non-doc `//` over `CAP_COMMENT_RATIO`% of code lines |
+
+**Only `commented-out-code` is an error, and only because it has a unique
+property: it is never right.** Dead code in a comment is a worse lie than dead
+code, because the compiler cannot even tell you it rotted. The other two are
+judgement — a 40-line comment earning its keep is the house style in this very
+repo — so they are soft caps alongside `god-file`, reported and never fatal.
+
+**The error rule is matched on shape, not on keywords.** A keyword alone is
+prose (`// let the caller decide`, `// use the first one that works`), so every
+pattern pairs a declaration head with a code terminator: `let` needs an `=` and
+a `;`, `fn` needs a `{`, an attribute must be the entire line. The cost of a
+false positive here is a failed gate on correct source, which is why the six
+patterns are narrow and a bare call statement — `// foo(bar);`, indistinguish-
+able from the C that gets quoted in a `// SAFETY:` block — is deliberately not
+one of them.
+
+Doc comments are outside all three rules. `///` and `//!` are governed by
+`missing_docs`, `rustdoc` and docs/RUST.md rule 60; counting them here would
+mean two gates pulling the same line in opposite directions.
+
+## god-file counts code, not bytes
+
+`CAP_LOC` was `wc -l`, so a 74-line comment block spent 74 lines of a 500-line
+budget and the one check meant to bound file size was partly measuring prose.
+It now counts lines that are neither blank nor comment, which is the thing the
+cap was always about. `comment-ratio` is what bounds the other half, and the
+two together say what one `wc -l` could not: this file is too big, versus this
+file is mostly talking.
+
+## too_many_lines, un-orphaned
+
+`lints.toml` allowed `clippy::too_many_lines` and credited the LOC ratchet to
+`scripts/budget-status.sh`; `clippy.toml` named the same script as the twin of
+its thresholds. **That script does not exist and is in no git history here.**
+The delegation was to nothing, so function length was enforced by nothing — the
+only surviving cap was `god-file`, at file scope, 500 lines away from the
+problem. The lint is now `warn` with `too-many-lines-threshold = 200`, and both
+comments that pointed at the ghost are gone.
+
+200 is the measured number, not a round one. Every clippy `warn` is fatal under
+the gate's `-D warnings`, so the threshold decides how much of the fleet is
+red on the day it lands: 150 fails 10 sites across 5 crates, 200 fails 4 across
+4, and 250 fails none because the longest function anywhere is 242 lines. 250
+would have been a ceiling that never touches anything; 200 puts pressure on
+exactly the four functions that are outliers against their own fleet.
+
+## `.cargo/config.toml` drifts and nothing noticed
+
+`sync-config` gates that file on `creates:` — correct, because it is where a
+consumer keeps its own `[build] rustflags` and `[target.*] linker`, and writing
+ours over that is data loss, not a sync. But `creates:` is write-once: the file
+is installed on day one and never reconciled again, and the preset's `unless:`
+branch prints the aliases to merge by hand, which is advice, not a gate.
+
+Measured across the fleet before this change: four of five consumers that had
+the file were still on a copy predating `--no-tests=warn`, and three still
+carried the name of a tool that no longer exists. Nobody merged the printout,
+and nothing ever said so.
+
+So the same answer as the lint block, for the same reason: **where we must not
+mutate, we enforce.** `alias_drift` compares each `name = "value"` under
+`[alias]` in the consumer's file against `aliases.toml` and reports what is
+missing or different, as a warning — the consumer's file stays the consumer's.
+It is a line match, not a TOML parse: the keys are ours, they are written on
+one line, and a parser here would buy nothing a literal compare does not
+already get right.
+
 ## Edge cases
 
 - `--all-features` cannot build mutually exclusive features → `FEATURE_ARGS=""`.
@@ -91,6 +172,15 @@ Exports: `ci`, `ci-fast`, `tools`, `sync-config`, `lints-check`, `findings`.
   nothing.
 - nextest never runs doctests; `cargo test --doc` hard-errors with no lib
   target, so `cargo metadata` is consulted first.
+- A comment run that reaches EOF still has to be emitted: the run is flushed
+  when a non-comment line ends it, and a file ending in its own banner has no
+  such line. Flushed again in `END`.
+- `comment-ratio` needs a floor as well as a cap. A 6-line stub with 4 lines of
+  header is 66% and says nothing; the rule is silent under 50 code lines.
+- A run of `//` inside a raw string or a `r#".."#` block is not a comment. awk
+  cannot see that without lexing Rust, so the rules accept it — the cost is a
+  warning on a file embedding commented source as data, which is also a file
+  worth looking at.
 - `grep` exits 1 on no match, which is the normal case for every ai-lint rule.
   `lib.sh` runs inside a process substitution under `set -euo pipefail`, so
   every check pipeline ends in `|| true` or the first non-match kills the
@@ -118,6 +208,64 @@ Exports: `ci`, `ci-fast`, `tools`, `sync-config`, `lints-check`, `findings`.
 - **A `lints-check` that could not run must not read as one that found
   nothing.** `findings.sh` never aborts, so it turns exit 2 into a
   `no-toml-parser` record — same reasoning as `build-failed`.
+
+## Validation — actually run, 2026-10-19
+
+Toolchain: cargo/clippy 1.98.1, shellcheck, cargo-deny, cargo-nextest,
+cargo-machete present. Fleet measured across 7 crates in 6 repos, 293 `.rs`
+files.
+
+- `shellcheck -x` + `bash -n` clean on all 5 scripts. The one new suppression
+  is `SC2016` in `god_files`, and it is a shellcheck limitation, not a bug:
+  shellcheck recognises an awk program when `awk` is the command and not when
+  it is an `xargs` argument, so it reads awk's `$0` as a failed shell
+  expansion. The baseline piped into `awk`; counting per file needs `FILENAME`,
+  which needs the names as arguments.
+- **`commented-out-code` fires 6/6 on real dead code and 0/5 on the traps.**
+  Positive: a commented `let`-with-initialiser, `fn`-with-brace, `pub struct`,
+  `use` path, `#[derive]` and `const`. Negative, all silent: `/// let doc = 1;`
+  (a doc comment), `// let the caller decide what to do;` and `// use the first
+  one that works;` (prose opening with a keyword), `// tty_vhangup_session
+  (tty);` (quoted C in a SAFETY block), and `// #[allow] (not #[expect]) plus
+  its own #[expect(allow_attributes)]` (prose *about* attributes).
+- **The error rule is 0 hits across the whole fleet**, which is the result that
+  justified landing it at error: it costs nobody a refactor and nothing has to
+  be cleaned before it is switched on. A broad probe run first — bare call
+  statements, lone braces, `.method();` — found 8 hits, and all 8 were prose
+  fragments or deliberate XNU kernel-source citations. There is no
+  commented-out Rust in this fleet. The rule is a ratchet against a spiral,
+  not a cleanup of one.
+- **`comment-block` boundary is exact**: 14 consecutive lines silent, 15 fires.
+  A run terminated by EOF is reported — a 20-line trailing banner with no
+  following code produced its record from the `END` flush, which the
+  during-the-loop flush alone would have dropped.
+- **`comment-ratio` floor works**: a 30-comment/60-code fixture reports 50%; a
+  6-line stub under a 4-line header, which is 66%, stays silent.
+- **Fleet totals at the chosen caps**: 27 `comment-block`, 1 `comment-ratio`, 0
+  `commented-out-code`. `CAP_COMMENT_RUN = 15` was picked off the measured
+  distribution, not guessed — of 3097 non-doc comment runs, 469 reach 5 lines,
+  90 reach 10, 27 reach 15 and 13 reach 20. 15 is where the count becomes a
+  list someone can act on.
+- **god-file: 64 findings before, 34 after.** The other 30 were files whose
+  comments pushed them over a cap meant for code. Per repo, old → new: anchor
+  8→2, codeintel 13→9, isayes 3→1, tally 12→7, provision 10→7, teleport 18→8.
+- **`alias_drift` found the real thing it was written for.** On provision it
+  reports exactly one record — `t` differs — which is the missing
+  `--no-tests=warn`. Negative control: run against a copy of `aliases.toml`
+  itself, it is silent.
+- **`too_many_lines` measured before the threshold was set**, on a cold clippy
+  per crate, because a warm one prints nothing. 150 fails 10 sites in 5 crates,
+  175 fails 8 in 5, 200 fails 4 in 4, and 250 fails none — the longest function
+  in the fleet is 242 lines. 200 was chosen: it is the setting that puts
+  pressure on the four genuine outliers and on nothing else.
+- **All six presets pass `provision validate`.**
+- **Fast gate green end to end on provision, all 7 steps**, with the two new
+  steps reporting: `cargo aliases` caught the stale `t`, `soft caps` reported
+  code lines.
+- **The full gate stops at step 7 on a consumer that has not taken the new lint
+  block**, with `lint-drift: too_many_lines: expected "warn", found "allow"`.
+  That is `lints-check` doing its job, and it is the negative control for this
+  whole change: the canonical block moved, and the consumer was told.
 
 ## Validation — actually run, 2026-09-12
 
@@ -205,6 +353,23 @@ cargo-machete all present. Every claim below is a run, not a reading.
 
 ## Known gaps
 
+- **`commented-out-code` has no escape hatch.** It is an error with no
+  per-line suppression, which is survivable only because it is 0 hits fleet-
+  wide and the patterns are narrow. The first legitimate hit — a doctest-like
+  snippet in a `//` comment that happens to be a whole declaration — has to be
+  rewritten as a doc comment or as prose. If that turns out to be common, the
+  answer is a marker, not a looser pattern.
+- **The comment rules cannot see raw strings.** `//` inside `r#".."#` is data,
+  not a comment, and awk cannot know that without lexing Rust.
+- **`alias_drift` checks `[alias]` and nothing else.** `[env]` carries
+  `RUSTDOCFLAGS = "-D warnings"`, which is what makes `cargo docs` meaningful,
+  and a consumer that drops it loses the check silently. It is not compared
+  because a consumer has a legitimate reason to extend `[env]` and no
+  legitimate reason to redefine one of our aliases.
+- **`CAP_COMMENT_RATIO` is nearly inert at 40.** One file in the fleet reaches
+  it. It is a ceiling against a future spiral rather than a description of
+  today, and the honest reading of the measurement is that run length, not
+  ratio, is where this fleet actually drifts.
 - **The toolchain floor is a claim, not a measurement.** The block is validated
   on 1.98.1; the oldest clippy that accepts every lint in it has not been
   established, because that needs old toolchains installed. An unknown lint is

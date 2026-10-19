@@ -129,6 +129,45 @@ Four things the gate exists to get right, all of which pass silently otherwise:
   test profile already build everything. Dropped.
 - **`[workspace.lints]` does nothing** until every member opts in.
 
+## The comment budget
+
+`missing_docs` and `rustdoc -D warnings` push doc comments up. Nothing pushed
+non-doc `//` down — so narration accretes where no lint looks, which is exactly
+what an agent that cannot delete is rewarded for. clippy has no comment-volume
+lint and no credible Rust tool for one exists, so `lib.sh` owns it:
+
+```
+commented-out-code  error    a `//` line that is Rust, not prose
+comment-block       warning  CAP_COMMENT_RUN consecutive non-doc `//` lines
+comment-ratio       warning  non-doc `//` over CAP_COMMENT_RATIO% of code
+```
+
+Only the first is fatal, because it is the only one that is never right: dead
+code in a comment is worse than dead code, since the compiler cannot tell you
+it rotted. The other two are judgement — a 40-line comment that earns its keep
+is the house style in this very repo — so they ride with the soft caps.
+
+It matches **shape, not keywords**. `// let the caller decide` and `// use the
+first one that works` are prose that opens with a Rust keyword, so every
+pattern pairs a declaration head with a code terminator. A bare call statement
+is deliberately not a pattern: it is indistinguishable from the C people quote
+inside a `// SAFETY:` block, and a false positive here fails a build on correct
+source.
+
+`///` and `//!` are outside all three — `missing_docs`, rustdoc and docs/RUST.md
+rule 60 govern those.
+
+## Function and file size
+
+`CAP_LOC` counts **code** lines now, not `wc -l`: a 74-line comment block used
+to spend 74 lines of a 500-line budget, so the check meant to bound file size
+was half measuring prose. Across the fleet that moved god-file from 64 findings
+to 34 — the other 30 were narration.
+
+Function length is `clippy::too_many_lines` at 200, which until now was
+`allow`ed and credited to a `scripts/budget-status.sh` that does not exist.
+Function length was enforced by nothing.
+
 ## The lint block is not a file copy
 
 `clippy.toml`, `rustfmt.toml` and `deny.toml` are copied in by
@@ -193,11 +232,13 @@ all**, and a check that silently reports nothing is worse than no check.
 |---|---|---|
 | `PKG_ARGS` | `--workspace` | Package selector passed to cargo |
 | `FEATURE_ARGS` | `--all-features` | Set `""` for mutually exclusive features |
-| `CAP_LOC` | `500` | God-file soft cap, non-test `.rs` |
+| `CAP_LOC` | `500` | God-file soft cap, non-test `.rs`. Code lines, not `wc -l` |
+| `CAP_COMMENT_RUN` | `15` | Consecutive non-doc `//` lines before `comment-block` |
+| `CAP_COMMENT_RATIO` | `40` | Non-doc `//` as a % of code lines before `comment-ratio` |
 
 ## Knobs, from a call site
 
-`PKG_ARGS`, `FEATURE_ARGS` and `CAP_LOC` above are what `scripts/` reads. From
+The vars above are what `scripts/` reads. From
 provision they are props, and `dir` names the crate:
 
 ```yaml
