@@ -258,6 +258,13 @@ files.
   175 fails 8 in 5, 200 fails 4 in 4, and 250 fails none — the longest function
   in the fleet is 242 lines. 200 was chosen: it is the setting that puts
   pressure on the four genuine outliers and on nothing else.
+- **One licence was added to the allow-list, by being blocked.** teleport's
+  cli failed `cargo deny check licenses` on `CDLA-Permissive-2.0`, which is
+  what the Mozilla CA bundle ships under — `webpki-roots` and
+  `webpki-root-certs`. Every Rust TLS stack that verifies a public
+  certificate pulls it in, so the choice was that entry or no TLS roots. It
+  is a permissive *data* licence and grants use and redistribution without
+  conditions on the using work.
 - **All six presets pass `provision validate`.**
 - **Fast gate green end to end on provision, all 7 steps**, with the two new
   steps reporting: `cargo aliases` caught the stale `t`, `soft caps` reported
