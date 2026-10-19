@@ -3,7 +3,7 @@
 # line, in the shared fleet schema.
 #
 #   {"tool":..,"rule":..,"level":"error|warning|note","path":..,"line":N,
-#    "col":N?,"message":..,"fingerprint":"rule:path:line"}
+#    "col":N?,"message":..,"fingerprint":"rule:path:line[:key]"}
 #
 # This is the ONLY script that speaks JSON. gate.sh renders the same checks for
 # humans from the same functions in lib.sh — the format lives at the edge, not
@@ -48,13 +48,18 @@ emit() {  # stdin: lib.sh records -> stdout: JSONL
 import json, sys
 for raw in sys.stdin:
     parts = raw.rstrip("\n").split("\t")
-    if len(parts) != 5:
+    if len(parts) not in (5, 6):
         continue
-    rule, level, path, line, message = parts
+    rule, level, path, line, message = parts[:5]
+    # The optional 6th field. Without it every alias-drift record shares the
+    # fingerprint alias-drift:.cargo/config.toml:1 and dedup keeps exactly one
+    # of them -- the collision lints-check already solves this way for
+    # lint-missing.
+    key = parts[5] if len(parts) == 6 else ""
     print(json.dumps({
         "tool": "rq", "rule": rule, "level": level, "path": path,
         "line": int(line), "message": message,
-        "fingerprint": f"{rule}:{path}:{line}",
+        "fingerprint": f"{rule}:{path}:{line}" + (f":{key}" if key else ""),
     }, separators=(",", ":")))'
 }
 
@@ -138,7 +143,9 @@ stream() {
     [ -n "$f" ] && files+=("$f")
   done < <(tracked_rs)
   clippy_findings
-  emit < <(ai_lint "${files[@]+"${files[@]}"}"; god_files; dup_deps)
+  emit < <(ai_lint "${files[@]+"${files[@]}"}"
+           comment_lint "${files[@]+"${files[@]}"}"
+           alias_drift; god_files; dup_deps)
 
   # Still never aborts -- but a lints-check that could not run must not read as
   # a lints-check that found nothing. Same reasoning as the build-failed record

@@ -1,7 +1,7 @@
 description: >-
   Every finding as JSONL for agents (.gate/findings.jsonl) — clippy diagnostics,
-  ai-lint, lint-block drift, soft caps. A pure producer: never re-gates, never
-  aborts. Enforcement stays with rq/ci.
+  ai-lint, the comment budget, lint-block drift, cargo-alias drift, soft caps.
+  A pure producer: never re-gates, never aborts. Enforcement stays with rq/ci.
 
 props:
   dir:
@@ -22,7 +22,15 @@ props:
   cap_loc:
     type: string
     default: "500"
-    description: God-file soft cap in LOC.
+    description: God-file soft cap, in code lines.
+  cap_comment_run:
+    type: string
+    default: "15"
+    description: Consecutive non-doc `//` lines before `comment-block`.
+  cap_comment_ratio:
+    type: string
+    default: "40"
+    description: Non-doc `//` as a percent of code lines before `comment-ratio`.
   out:
     type: string
     default: ".gate/findings.jsonl"
@@ -39,6 +47,8 @@ steps:
       cd "{{ props.dir }}" &&
       PKG_ARGS="{{ props.pkg_args }}" FEATURE_ARGS="{{ props.feature_args }}"
       CAP_LOC="{{ props.cap_loc }}"
+      CAP_COMMENT_RUN="{{ props.cap_comment_run }}"
+      CAP_COMMENT_RATIO="{{ props.cap_comment_ratio }}"
       bash "{{ component_dir }}/scripts/findings.sh" "{{ props.out }}"
     changed_when: "false"
     timeout: 30m

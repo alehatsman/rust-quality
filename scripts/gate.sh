@@ -48,8 +48,11 @@ step() { printf '[%s/%s] %s\n' "$1" "$TOTAL" "$2"; }
 
 # render <title> — turn lib.sh records on stdin into an indented human report.
 render() {
-  local n=0 rule level path lineno msg
-  while IFS=$'\t' read -r rule level path lineno msg; do
+  # Six fields, not five: `key` is optional and only disambiguates
+  # fingerprints downstream, but it must be read into its own variable or
+  # `read` appends it to the message, where it reads as noise.
+  local n=0 rule level path lineno msg key
+  while IFS=$'\t' read -r rule level path lineno msg key; do
     printf '  %s:%s: %s: %s\n' "$path" "$lineno" "$rule" "$msg"
     n=$((n + 1))
     [ "$level" = "error" ] && FAILED=1
@@ -61,7 +64,7 @@ FAILED=0
 case "$MODE" in
 # ── fast: pre-commit. No full build, no network, no extra tools. ─────────────
 fast)
-  TOTAL=5
+  TOTAL=7
   step 1 "Cargo.lock (drift)"
   if ! cargo metadata --locked --format-version 1 >/dev/null 2>&1; then
     if [ -f Cargo.lock ]; then
@@ -97,13 +100,21 @@ fast)
     render "ai-lint" < <(ai_lint "${files[@]}")
   fi
 
-  step 5 "soft caps"
+  step 5 "comment budget (staged)"
+  if [ "${#files[@]}" -eq 0 ]; then echo "  (no staged .rs files)"; else
+    render "comment budget" < <(comment_lint "${files[@]}")
+  fi
+
+  step 6 "cargo aliases"
+  render "cargo aliases" < <(alias_drift)
+
+  step 7 "soft caps"
   render "soft caps" < <(god_files; dup_deps)
   ;;
 
 # ── full: pre-push. ──────────────────────────────────────────────────────────
 full)
-  TOTAL=9
+  TOTAL=11
   step 1 "cargo fmt --check"
   cargo fmt --all --check || { echo "  ✗ fix with: cargo fmt --all" >&2; exit 1; }
 
@@ -158,7 +169,15 @@ full)
   step 8 "ai-lint (tracked)"
   render "ai-lint" < <(tracked_rs | while IFS= read -r f; do ai_lint "$f"; done)
 
-  step 9 "soft caps"
+  # Over tracked files for the same reason ai-lint is: a --no-verify commit,
+  # an amend, a rebase or a merge never passes through the staged path.
+  step 9 "comment budget (tracked)"
+  render "comment budget" < <(tracked_rs | while IFS= read -r f; do comment_lint "$f"; done)
+
+  step 10 "cargo aliases"
+  render "cargo aliases" < <(alias_drift)
+
+  step 11 "soft caps"
   render "soft caps" < <(god_files; dup_deps)
   ;;
 

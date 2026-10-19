@@ -1,7 +1,7 @@
 description: >-
   Full pre-push gate — fmt, clippy, test + doctests, rustdoc, cargo-deny,
-  cargo-machete, lint-block drift, ai-lint on tracked files, soft caps. First
-  failure stops the run.
+  cargo-machete, lint-block drift, ai-lint and the comment budget on tracked
+  files, cargo-alias drift, soft caps. First failure stops the run.
 
 props:
   dir:
@@ -24,7 +24,18 @@ props:
   cap_loc:
     type: string
     default: "500"
-    description: God-file soft cap in LOC (informational).
+    description: God-file soft cap, in code lines (informational).
+  cap_comment_run:
+    type: string
+    default: "15"
+    description: >-
+      Consecutive non-doc `//` lines before `comment-block` (informational).
+  cap_comment_ratio:
+    type: string
+    default: "40"
+    description: >-
+      Non-doc `//` as a percent of code lines before `comment-ratio`
+      (informational).
 
 steps:
   # The full gate compiles the workspace twice over -- clippy's pass and the
@@ -41,6 +52,8 @@ steps:
       cd "{{ props.dir }}" &&
       PKG_ARGS="{{ props.pkg_args }}" FEATURE_ARGS="{{ props.feature_args }}"
       CAP_LOC="{{ props.cap_loc }}"
+      CAP_COMMENT_RUN="{{ props.cap_comment_run }}"
+      CAP_COMMENT_RATIO="{{ props.cap_comment_ratio }}"
       bash "{{ component_dir }}/scripts/gate.sh" full
     changed_when: "false"
     timeout: 30m

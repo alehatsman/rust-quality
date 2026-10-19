@@ -192,15 +192,26 @@ Companion: [STACK.md](STACK.md) — what to reach for.
     `M-NO-META-DESIGN-DOCUMENTATION`.
 61. **Examples that compile.** Doctests are the only documentation that cannot
     rot.
-62. **`rustdoc -D warnings` in the gate.** A broken intra-doc link is a
+62. **Never commit commented-out code.** git remembers it; a comment does not,
+    and the compiler cannot tell you it rotted. [gate: `commented-out-code`,
+    error]
+63. **Comment why, not what, and stop.** A `//` block past ~15 lines is an
+    essay where a module doc or a linked issue belongs, and a file more than
+    40% non-doc comment is explaining around its own shape rather than fixing
+    it. Both are soft caps, not refusals. [gate: `comment-block`,
+    `comment-ratio`]
+64. **Delete rather than annotate.** The failure mode this exists for is an
+    agent that narrates a change it is not willing to remove — "previously
+    this did X", "kept for reference". Neither belongs in source.
+65. **`rustdoc -D warnings` in the gate.** A broken intra-doc link is a
     documentation bug with a compiler that can find it. [gate]
 
 ## 11. Performance
 
-63. **Measure first, always.** `samply` or `cargo flamegraph` for *where*,
+66. **Measure first, always.** `samply` or `cargo flamegraph` for *where*,
     `divan`/`criterion` for *how much*, `hyperfine` for CLI wall-clock. A guess
     about a Rust hot path is wrong about as often as a coin flip.
-64. **Set the profiles once.**
+67. **Set the profiles once.**
     ```toml
     [profile.release]
     lto = "thin"
@@ -211,30 +222,30 @@ Companion: [STACK.md](STACK.md) — what to reach for.
     [profile.dev.package."*"]
     opt-level = 2       # optimized deps, fast-compiling own code
     ```
-65. **Allocate less before you allocate faster.** `with_capacity`,
+68. **Allocate less before you allocate faster.** `with_capacity`,
     `shrink_to_fit` after building, reuse buffers in loops, `Box<str>` /
     `Box<[T]>` for immutable owned sequences. `M-MEM-REUSE`, `M-BOX-DST`.
-66. **Fast hasher for internal maps** (`foldhash`, `rustc-hash`) — never for a
+69. **Fast hasher for internal maps** (`foldhash`, `rustc-hash`) — never for a
     map whose keys come from an untrusted source. `M-FAST-HASHER`.
-67. **`&str` and `&[T]` in hot signatures**, not `String` and `Vec`.
-68. **Never `.clone()` to silence the borrow checker.** That is the compiler
+70. **`&str` and `&[T]` in hot signatures**, not `String` and `Vec`.
+71. **Never `.clone()` to silence the borrow checker.** That is the compiler
     telling you the ownership model is wrong; restructure instead.
 
 ## 12. Supply chain
 
-69. **`cargo deny check` in the gate** — advisories, licenses, bans, sources.
+72. **`cargo deny check` in the gate** — advisories, licenses, bans, sources.
     One tool, one config, no excuses. [gate]
-70. **Read the `build.rs` of every dependency you add.** In August 2026
+73. **Read the `build.rs` of every dependency you add.** In August 2026
     `arrayref`, `internment` and `append-only-vec` were published with a
     poisoned `proc-macro1` dependency that executed at *compile time*. Building
     was enough.
-71. **Unmaintained is a vulnerability class.** `async-std`'s discontinuation
+74. **Unmaintained is a vulnerability class.** `async-std`'s discontinuation
     shipped as RUSTSEC-2025-0052. Your advisory gate should already be shouting
     about it.
-72. **Commit `Cargo.lock` for binaries. `cargo install --locked`, always.**
+75. **Commit `Cargo.lock` for binaries. `cargo install --locked`, always.**
     Without it, install-time resolution picks whatever was published five
     minutes ago.
-73. **Fewer dependencies is a security control**, not an aesthetic preference.
+76. **Fewer dependencies is a security control**, not an aesthetic preference.
 
 ## 13. Traps — 2026 edition
 
